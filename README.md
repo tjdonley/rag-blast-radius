@@ -8,9 +8,9 @@ Changing one component can silently invalidate the others. `rag-blast-radius` is
 
 ## Status
 
-The CLI includes package wiring, starter manifest generation, typed manifest validation, categorized manifest diffing, rule explanations, examples, and tests.
+The CLI includes package wiring, starter manifest generation, typed manifest validation, categorized manifest diffing, deterministic risk rules, CI-friendly reports, rule explanations, examples, and tests.
 
-The deterministic risk rules, richer reports, GitHub Action, and integrations are planned in `BUILD_PLAN.md`.
+The GitHub Action and integrations are planned in `BUILD_PLAN.md`.
 
 ## Install Locally
 
@@ -38,6 +38,18 @@ Compare two manifests:
 
 ```bash
 rag-blast check --old old.json --new new.json
+```
+
+Emit machine-readable JSON:
+
+```bash
+rag-blast check --old old.json --new new.json --format json
+```
+
+Fail CI on high-risk or unassessed changes:
+
+```bash
+rag-blast check --old old.json --new new.json --fail-on high
 ```
 
 From a repo checkout, try one of the included examples:
@@ -103,7 +115,7 @@ Validation catches missing required sections, empty strings, invalid numeric val
 
 `rag-blast check` returns deterministic, categorized manifest changes and triggered risk rules.
 
-Example JSON output includes paths, categories, summaries, old/new values, rule findings, and the highest triggered severity. This excerpt shows the shape:
+Example JSON output includes paths, categories, summaries, old/new values, rule findings, recommended rollout steps, and the highest triggered severity. This excerpt shows the shape:
 
 ```json
 {
@@ -117,7 +129,7 @@ Example JSON output includes paths, categories, summaries, old/new values, rule 
     {
       "path": "caches[support_rag_prod_v4].namespace",
       "category": "semantic_cache_namespace_unchanged",
-      "summary": "Semantic cache namespace unchanged after embedding change",
+      "summary": "Semantic cache namespace unchanged after embedding, chunking, or retrieval change",
       "old": "support_rag_prod_v4",
       "new": "support_rag_prod_v4"
     },
@@ -139,9 +151,14 @@ Example JSON output includes paths, categories, summaries, old/new values, rule 
       "change_paths": ["embedding.model"]
     }
   ],
+  "recommended_rollout": [
+    "Regenerate document embeddings for the proposed manifest."
+  ],
   "note": "Additional findings omitted from this excerpt."
 }
 ```
+
+`--fail-on` accepts `none`, `low`, `medium`, or `high`. The default is `none`. If changes are present but no rule can assess them, the report risk is `UNASSESSED`; any enabled threshold fails that report so unknown-impact changes do not silently pass CI.
 
 ## Rules
 

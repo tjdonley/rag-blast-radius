@@ -84,6 +84,68 @@ def test_cli_check_json_reports_changes(tmp_path) -> None:
         "SHADOW_INDEX_RECOMMENDED",
         "ROLLBACK_REQUIRES_OLD_INDEX",
     ]
+    assert report["recommended_rollout"]
+
+
+def test_cli_check_fail_on_high_exits_with_failure_after_json_report(tmp_path) -> None:
+    old_path = tmp_path / "old.json"
+    new_path = tmp_path / "new.json"
+    old_manifest = starter_manifest()
+    new_manifest = starter_manifest()
+    new_manifest["embedding"]["model"] = "text-embedding-3-large"
+
+    old_path.write_text(json.dumps(old_manifest), encoding="utf-8")
+    new_path.write_text(json.dumps(new_manifest), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "check",
+            "--old",
+            str(old_path),
+            "--new",
+            str(new_path),
+            "--format",
+            "json",
+            "--fail-on",
+            "high",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert json.loads(result.output)["risk"] == "HIGH"
+
+
+def test_cli_check_fail_on_high_exits_for_unassessed_changes(tmp_path) -> None:
+    old_path = tmp_path / "old.json"
+    new_path = tmp_path / "new.json"
+    old_manifest = starter_manifest()
+    new_manifest = starter_manifest()
+    new_manifest["app"] = "customer-support-rag-v2"
+
+    old_path.write_text(json.dumps(old_manifest), encoding="utf-8")
+    new_path.write_text(json.dumps(new_manifest), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["check", "--old", str(old_path), "--new", str(new_path), "--fail-on", "high"],
+    )
+
+    assert result.exit_code == 1
+    assert "Risk: UNASSESSED" in result.output
+
+
+def test_cli_check_fail_on_high_allows_no_changes(tmp_path) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(starter_manifest()), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        ["check", "--old", str(manifest_path), "--new", str(manifest_path), "--fail-on", "high"],
+    )
+
+    assert result.exit_code == 0
+    assert "Risk: NONE" in result.output
 
 
 def test_cli_check_text_preserves_keyed_paths(tmp_path) -> None:
@@ -114,6 +176,27 @@ def test_cli_check_rejects_invalid_format(tmp_path) -> None:
 
     assert result.exit_code == 1
     assert "Unsupported format" in result.output
+
+
+def test_cli_check_rejects_invalid_fail_on_threshold(tmp_path) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(starter_manifest()), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "check",
+            "--old",
+            str(manifest_path),
+            "--new",
+            str(manifest_path),
+            "--fail-on",
+            "critical",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "Unsupported fail-on threshold" in result.output
 
 
 def test_cli_check_rejects_malformed_json(tmp_path) -> None:
