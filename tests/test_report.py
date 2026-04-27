@@ -38,3 +38,24 @@ def test_render_text_report_handles_no_changes() -> None:
     assert "Risk: NONE" in text
     assert "  - none" in text
     assert "Invalidation rules triggered:" in text
+
+
+def test_build_report_keeps_unknown_change_risk_unassessed() -> None:
+    report = build_report(
+        ManifestDiff(
+            changes=(
+                ManifestChange(
+                    path="app",
+                    old="support-rag",
+                    new="support-rag-v2",
+                    category="manifest_field_changed",
+                    summary="Manifest field changed",
+                ),
+            )
+        )
+    )
+
+    assert report["risk"] == "UNASSESSED"
+    assert report["change_count"] == 1
+    assert report["finding_count"] == 0
+    assert report["findings"] == []
