@@ -1,0 +1,30 @@
+{
+  "app": "customer-support-rag",
+  "environment": "prod",
+  "embedding": {
+    "provider": "openai",
+    "model": "text-embedding-3-small",
+    "dimensions": 1536
+  },
+  "chunking": {
+    "strategy": "recursive_character",
+    "chunk_size": 1200,
+    "chunk_overlap": 150
+  },
+  "vector_store": {
+    "provider": "qdrant",
+    "collection": "support_docs_chunks_1200"
+  },
+  "retriever": {
+    "top_k": 8,
+    "hybrid": false,
+    "reranker": null
+  },
+  "caches": [],
+  "evals": [
+    {
+      "name": "retrieval_golden",
+      "path": "evals/retrieval_golden.jsonl"
+    }
+  ]
+}
