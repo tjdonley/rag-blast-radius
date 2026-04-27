@@ -100,7 +100,7 @@ def check_command(
         typer.echo(json.dumps(report, indent=2))
         return
 
-    console.print(render_text_report(report))
+    console.print(render_text_report(report), markup=False)
 
 
 @app.command("explain")

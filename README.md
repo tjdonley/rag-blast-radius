@@ -8,7 +8,7 @@ Changing one component can silently invalidate the others. `rag-blast-radius` is
 
 ## Status
 
-The CLI includes package wiring, starter manifest generation, typed manifest validation, basic manifest diffing, rule explanations, examples, and tests.
+The CLI includes package wiring, starter manifest generation, typed manifest validation, categorized manifest diffing, rule explanations, examples, and tests.
 
 The deterministic risk rules, richer reports, GitHub Action, and integrations are planned in `BUILD_PLAN.md`.
 
@@ -98,6 +98,39 @@ rag-blast explain REEMBED_REQUIRED
 Validation catches missing required sections, empty strings, invalid numeric values, stringified numbers or booleans, chunk overlaps that are not smaller than chunk size, and unknown keys that are likely typos.
 
 `retriever.reranker` can be `null` or an object with a required `model` and optional `provider`.
+
+## Diff Output
+
+`rag-blast check` returns deterministic, categorized manifest changes. The current report does not assign risk yet; risk rules are planned next.
+
+Example JSON output includes paths, categories, summaries, and old/new values:
+
+```json
+{
+  "risk": "UNASSESSED",
+  "change_count": 2,
+  "categories": [
+    "embedding_model_changed",
+    "semantic_cache_namespace_unchanged"
+  ],
+  "changes": [
+    {
+      "path": "caches[support_rag_prod_v4].namespace",
+      "category": "semantic_cache_namespace_unchanged",
+      "summary": "Semantic cache namespace unchanged after embedding change",
+      "old": "support_rag_prod_v4",
+      "new": "support_rag_prod_v4"
+    },
+    {
+      "path": "embedding.model",
+      "category": "embedding_model_changed",
+      "summary": "Embedding model changed",
+      "old": "text-embedding-ada-002",
+      "new": "text-embedding-3-large"
+    }
+  ]
+}
+```
 
 ## Repository
 
