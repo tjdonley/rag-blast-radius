@@ -101,6 +101,25 @@ def test_diff_manifests_detects_reranker_removed() -> None:
     ]
 
 
+def test_diff_manifests_treats_missing_and_null_reranker_as_equal() -> None:
+    old = {"retriever": {"reranker": None}}
+    new = {"retriever": {}}
+
+    assert diff_manifests(old, new).change_count == 0
+    assert diff_manifests(new, old).change_count == 0
+
+
+def test_diff_manifests_classifies_reranker_removed_when_new_state_is_empty() -> None:
+    old = {"retriever": {"reranker": {"model": "rerank-english-v3.0"}}}
+    new = {"retriever": {}}
+
+    manifest_diff = diff_manifests(old, new)
+
+    assert [(change.path, change.category) for change in manifest_diff.changes] == [
+        ("retriever.reranker", "reranker_removed")
+    ]
+
+
 def test_diff_manifests_detects_nested_reranker_changes() -> None:
     old = starter_manifest()
     old["retriever"]["reranker"] = {"provider": "cohere", "model": "rerank-english-v3.0"}

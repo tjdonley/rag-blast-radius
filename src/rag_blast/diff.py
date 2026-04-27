@@ -90,6 +90,9 @@ def _diff_values(old: Any, new: Any, path: str = "") -> list[ManifestChange]:
         if key_name is not None:
             return _diff_keyed_lists(old, new, path, key_name)
 
+    if _equivalent_missing_reranker(path, old, new):
+        return []
+
     if old == new:
         return []
 
@@ -107,9 +110,11 @@ def _categorize_change(path: str, old: Any, new: Any) -> tuple[str, str]:
 
     if path.startswith("retriever.reranker"):
         if path == "retriever.reranker":
-            if old is MISSING or old is None:
+            old_has_reranker = old is not MISSING and old is not None
+            new_has_reranker = new is not MISSING and new is not None
+            if not old_has_reranker and new_has_reranker:
                 return "reranker_added", "Reranker added"
-            if new is MISSING or new is None:
+            if old_has_reranker and not new_has_reranker:
                 return "reranker_removed", "Reranker removed"
         return "reranker_changed", "Reranker changed"
 
@@ -154,6 +159,14 @@ def _all_dicts_have_unique_key(values: Iterable[Any], key: str) -> bool:
         seen.add(identity)
 
     return True
+
+
+def _equivalent_missing_reranker(path: str, old: Any, new: Any) -> bool:
+    return (
+        path == "retriever.reranker"
+        and (old is MISSING or old is None)
+        and (new is MISSING or new is None)
+    )
 
 
 def _diff_keyed_lists(
