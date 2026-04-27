@@ -61,8 +61,35 @@ def test_cli_check_json_reports_changes(tmp_path) -> None:
 
     assert result.exit_code == 0
     report = json.loads(result.output)
-    assert report["change_count"] == 1
-    assert report["changes"][0]["path"] == "embedding.model"
+    assert report["change_count"] == 2
+    assert report["categories"] == [
+        "embedding_model_changed",
+        "semantic_cache_namespace_unchanged",
+    ]
+    assert [change["path"] for change in report["changes"]] == [
+        "caches[support_rag_prod_v4].namespace",
+        "embedding.model",
+    ]
+    assert [change["summary"] for change in report["changes"]] == [
+        "Semantic cache namespace unchanged after embedding change",
+        "Embedding model changed",
+    ]
+
+
+def test_cli_check_text_preserves_keyed_paths(tmp_path) -> None:
+    old_path = tmp_path / "old.json"
+    new_path = tmp_path / "new.json"
+    old_manifest = starter_manifest()
+    new_manifest = starter_manifest()
+    new_manifest["embedding"]["model"] = "text-embedding-3-large"
+
+    old_path.write_text(json.dumps(old_manifest), encoding="utf-8")
+    new_path.write_text(json.dumps(new_manifest), encoding="utf-8")
+
+    result = runner.invoke(app, ["check", "--old", str(old_path), "--new", str(new_path)])
+
+    assert result.exit_code == 0
+    assert "caches[support_rag_prod_v4].namespace" in result.output
 
 
 def test_cli_check_rejects_invalid_format(tmp_path) -> None:
