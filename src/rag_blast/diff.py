@@ -71,6 +71,9 @@ CACHE_SENSITIVE_CATEGORIES = frozenset(
         "embedding_provider_changed",
         "embedding_model_changed",
         "embedding_dimensions_changed",
+        "chunking_strategy_changed",
+        "chunk_size_changed",
+        "chunk_overlap_changed",
         "retriever_top_k_changed",
         "hybrid_retrieval_changed",
         "reranker_added",
@@ -212,7 +215,7 @@ def _semantic_cache_namespace_changes(
             old=namespace,
             new=namespace,
             category="semantic_cache_namespace_unchanged",
-            summary="Semantic cache namespace unchanged after embedding or retrieval change",
+            summary="Semantic cache namespace unchanged after embedding, chunking, or retrieval change",
         )
         for namespace in unchanged_namespaces
     ]

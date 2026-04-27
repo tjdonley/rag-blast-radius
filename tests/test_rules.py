@@ -98,6 +98,7 @@ def test_evaluate_rules_returns_deterministic_rule_order() -> None:
             1200,
             [
                 "REEMBED_REQUIRED",
+                "SEMANTIC_CACHE_UNSAFE",
                 "RETRIEVAL_BASELINE_STALE",
                 "CHUNKING_CHANGED",
                 "SHADOW_INDEX_RECOMMENDED",
@@ -121,6 +122,21 @@ def test_evaluate_rules_does_not_trigger_semantic_cache_rule_without_cache() -> 
     assert _finding_ids(diff_manifests(old, new)) == [
         "RETRIEVAL_BASELINE_STALE",
         "RETRIEVER_BEHAVIOR_CHANGED",
+    ]
+
+
+def test_evaluate_rules_does_not_trigger_semantic_cache_rule_for_chunking_without_cache() -> None:
+    old = starter_manifest()
+    old["caches"] = []
+    new = deepcopy(old)
+    new["chunking"]["chunk_size"] = 1200
+
+    assert _finding_ids(diff_manifests(old, new)) == [
+        "REEMBED_REQUIRED",
+        "RETRIEVAL_BASELINE_STALE",
+        "CHUNKING_CHANGED",
+        "SHADOW_INDEX_RECOMMENDED",
+        "ROLLBACK_REQUIRES_OLD_INDEX",
     ]
 
 

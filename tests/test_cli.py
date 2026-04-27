@@ -73,7 +73,7 @@ def test_cli_check_json_reports_changes(tmp_path) -> None:
         "embedding.model",
     ]
     assert [change["summary"] for change in report["changes"]] == [
-        "Semantic cache namespace unchanged after embedding or retrieval change",
+        "Semantic cache namespace unchanged after embedding, chunking, or retrieval change",
         "Embedding model changed",
     ]
     assert [finding["rule_id"] for finding in report["findings"]] == [

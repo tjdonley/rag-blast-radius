@@ -254,6 +254,18 @@ def test_diff_manifests_detects_semantic_cache_namespace_unchanged_after_retriev
     ]
 
 
+def test_diff_manifests_detects_semantic_cache_namespace_unchanged_after_chunking_change() -> None:
+    old = starter_manifest()
+    new = deepcopy(old)
+    new["chunking"]["chunk_size"] = 1200
+
+    manifest_diff = diff_manifests(old, new)
+
+    assert ("caches[support_rag_prod_v4].namespace", "semantic_cache_namespace_unchanged") in [
+        (change.path, change.category) for change in manifest_diff.changes
+    ]
+
+
 def test_diff_manifests_does_not_emit_semantic_cache_signal_without_cache() -> None:
     old = starter_manifest()
     old["caches"] = []
