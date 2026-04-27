@@ -23,6 +23,7 @@ ROLLOUT_STEPS = {
 def build_report(manifest_diff: ManifestDiff) -> dict[str, Any]:
     """Build the manifest diff report payload."""
     findings = evaluate_rules(manifest_diff)
+    unassessed_change_paths = _unassessed_change_paths(manifest_diff, findings)
     return {
         "risk": _report_risk(manifest_diff, findings),
         "change_count": manifest_diff.change_count,
@@ -30,7 +31,11 @@ def build_report(manifest_diff: ManifestDiff) -> dict[str, Any]:
         "changes": [change.to_dict() for change in manifest_diff.changes],
         "finding_count": len(findings),
         "findings": [finding.to_dict() for finding in findings],
-        "recommended_rollout": _recommended_rollout(manifest_diff, findings),
+        "unassessed_change_count": len(unassessed_change_paths),
+        "unassessed_change_paths": list(unassessed_change_paths),
+        "recommended_rollout": _recommended_rollout(
+            manifest_diff, findings, unassessed_change_paths
+        ),
         "note": "Risk is based on deterministic local rules.",
     }
 
@@ -63,6 +68,12 @@ def render_text_report(report: dict[str, Any]) -> str:
         for finding in findings:
             lines.append(f"  - {finding['severity']}: {finding['rule_id']} - {finding['summary']}")
 
+    unassessed_change_paths = report["unassessed_change_paths"]
+    if unassessed_change_paths:
+        lines.extend(["", "Unassessed changes:"])
+        for path in unassessed_change_paths:
+            lines.append(f"  - {path}")
+
     rollout_steps = report["recommended_rollout"]
     if rollout_steps:
         lines.extend(["", "Recommended rollout:"])
@@ -91,6 +102,9 @@ def should_fail_report(report: dict[str, Any], fail_on: str) -> bool:
     if fail_on == "none":
         return False
 
+    if report["unassessed_change_count"]:
+        return True
+
     risk = str(report["risk"])
     if risk == "UNASSESSED":
         return bool(report["change_count"])
@@ -109,7 +123,9 @@ def _report_risk(manifest_diff: ManifestDiff, findings: tuple[RuleFinding, ...])
 
 
 def _recommended_rollout(
-    manifest_diff: ManifestDiff, findings: tuple[RuleFinding, ...]
+    manifest_diff: ManifestDiff,
+    findings: tuple[RuleFinding, ...],
+    unassessed_change_paths: tuple[str, ...],
 ) -> list[str]:
     steps: list[str] = []
     for finding in findings:
@@ -117,7 +133,18 @@ def _recommended_rollout(
         if step not in steps:
             steps.append(step)
 
-    if not steps and manifest_diff.change_count:
+    if unassessed_change_paths:
+        steps.append("Review unassessed manifest changes before deployment.")
+    elif not steps and manifest_diff.change_count:
         steps.append("Review unassessed manifest changes before deployment.")
 
     return steps
+
+
+def _unassessed_change_paths(
+    manifest_diff: ManifestDiff, findings: tuple[RuleFinding, ...]
+) -> tuple[str, ...]:
+    assessed_paths = {path for finding in findings for path in finding.change_paths}
+    return tuple(
+        change.path for change in manifest_diff.changes if change.path not in assessed_paths
+    )

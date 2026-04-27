@@ -64,6 +64,8 @@ def test_cli_check_json_reports_changes(tmp_path) -> None:
     assert report["risk"] == "HIGH"
     assert report["change_count"] == 2
     assert report["finding_count"] == 6
+    assert report["unassessed_change_count"] == 0
+    assert report["unassessed_change_paths"] == []
     assert report["categories"] == [
         "embedding_model_changed",
         "semantic_cache_namespace_unchanged",
@@ -133,6 +135,40 @@ def test_cli_check_fail_on_high_exits_for_unassessed_changes(tmp_path) -> None:
 
     assert result.exit_code == 1
     assert "Risk: UNASSESSED" in result.output
+
+
+def test_cli_check_fail_on_high_exits_for_mixed_unassessed_changes(tmp_path) -> None:
+    old_path = tmp_path / "old.json"
+    new_path = tmp_path / "new.json"
+    old_manifest = starter_manifest()
+    old_manifest["caches"] = []
+    new_manifest = starter_manifest()
+    new_manifest["caches"] = []
+    new_manifest["app"] = "customer-support-rag-v2"
+    new_manifest["retriever"]["top_k"] = 12
+
+    old_path.write_text(json.dumps(old_manifest), encoding="utf-8")
+    new_path.write_text(json.dumps(new_manifest), encoding="utf-8")
+
+    result = runner.invoke(
+        app,
+        [
+            "check",
+            "--old",
+            str(old_path),
+            "--new",
+            str(new_path),
+            "--format",
+            "json",
+            "--fail-on",
+            "high",
+        ],
+    )
+
+    report = json.loads(result.output)
+    assert result.exit_code == 1
+    assert report["risk"] == "MEDIUM"
+    assert report["unassessed_change_paths"] == ["app"]
 
 
 def test_cli_check_fail_on_high_allows_no_changes(tmp_path) -> None:

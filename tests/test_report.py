@@ -68,9 +68,40 @@ def test_build_report_keeps_unknown_change_risk_unassessed() -> None:
     assert report["change_count"] == 1
     assert report["finding_count"] == 0
     assert report["findings"] == []
+    assert report["unassessed_change_count"] == 1
+    assert report["unassessed_change_paths"] == ["app"]
     assert report["recommended_rollout"] == [
         "Review unassessed manifest changes before deployment."
     ]
+
+
+def test_build_report_tracks_mixed_assessed_and_unassessed_changes() -> None:
+    report = build_report(
+        ManifestDiff(
+            changes=(
+                ManifestChange(
+                    path="app",
+                    old="support-rag",
+                    new="support-rag-v2",
+                    category="manifest_field_changed",
+                    summary="Manifest field changed",
+                ),
+                ManifestChange(
+                    path="retriever.top_k",
+                    old=8,
+                    new=12,
+                    category="retriever_top_k_changed",
+                    summary="Retriever top_k changed",
+                ),
+            )
+        )
+    )
+
+    assert report["risk"] == "MEDIUM"
+    assert report["finding_count"] == 2
+    assert report["unassessed_change_count"] == 1
+    assert report["unassessed_change_paths"] == ["app"]
+    assert "Review unassessed manifest changes before deployment." in report["recommended_rollout"]
 
 
 def test_render_json_report_is_parseable() -> None:
@@ -105,6 +136,32 @@ def test_should_fail_report_uses_severity_thresholds() -> None:
 
     assert should_fail_report(report, "medium") is True
     assert should_fail_report(report, "high") is False
+
+
+def test_should_fail_report_fails_mixed_unassessed_changes_when_threshold_enabled() -> None:
+    report = build_report(
+        ManifestDiff(
+            changes=(
+                ManifestChange(
+                    path="app",
+                    old="support-rag",
+                    new="support-rag-v2",
+                    category="manifest_field_changed",
+                    summary="Manifest field changed",
+                ),
+                ManifestChange(
+                    path="retriever.top_k",
+                    old=8,
+                    new=12,
+                    category="retriever_top_k_changed",
+                    summary="Retriever top_k changed",
+                ),
+            )
+        )
+    )
+
+    assert should_fail_report(report, "high") is True
+    assert should_fail_report(report, "none") is False
 
 
 def test_should_fail_report_fails_unassessed_changes_when_threshold_enabled() -> None:
