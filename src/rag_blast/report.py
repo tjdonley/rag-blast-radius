@@ -11,7 +11,7 @@ def build_report(changes: list[ManifestChange]) -> dict[str, Any]:
         "risk": "UNASSESSED" if changes else "NONE",
         "change_count": len(changes),
         "changes": [change.to_dict() for change in changes],
-        "note": "Phase 1 reports raw manifest changes. Risk rules are added in later phases.",
+        "note": "Current reports list raw manifest changes. Risk rules are added in later phases.",
     }
 
 

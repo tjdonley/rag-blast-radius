@@ -1,0 +1,33 @@
+{
+  "app": "customer-support-rag",
+  "environment": "prod",
+  "embedding": {
+    "provider": "openai",
+    "model": "text-embedding-3-small",
+    "dimensions": 1536
+  },
+  "chunking": {
+    "strategy": "recursive_character",
+    "chunk_size": 800,
+    "chunk_overlap": 100
+  },
+  "vector_store": {
+    "provider": "qdrant",
+    "collection": "support_docs_v3"
+  },
+  "retriever": {
+    "top_k": 12,
+    "hybrid": false,
+    "reranker": {
+      "provider": "cohere",
+      "model": "rerank-english-v3.0"
+    }
+  },
+  "caches": [],
+  "evals": [
+    {
+      "name": "answer_quality",
+      "path": "evals/answer_quality.jsonl"
+    }
+  ]
+}
