@@ -61,7 +61,9 @@ def test_cli_check_json_reports_changes(tmp_path) -> None:
 
     assert result.exit_code == 0
     report = json.loads(result.output)
+    assert report["risk"] == "HIGH"
     assert report["change_count"] == 2
+    assert report["finding_count"] == 6
     assert report["categories"] == [
         "embedding_model_changed",
         "semantic_cache_namespace_unchanged",
@@ -71,8 +73,16 @@ def test_cli_check_json_reports_changes(tmp_path) -> None:
         "embedding.model",
     ]
     assert [change["summary"] for change in report["changes"]] == [
-        "Semantic cache namespace unchanged after embedding change",
+        "Semantic cache namespace unchanged after embedding, chunking, or retrieval change",
         "Embedding model changed",
+    ]
+    assert [finding["rule_id"] for finding in report["findings"]] == [
+        "REEMBED_REQUIRED",
+        "VECTOR_INDEX_INCOMPATIBLE",
+        "SEMANTIC_CACHE_UNSAFE",
+        "RETRIEVAL_BASELINE_STALE",
+        "SHADOW_INDEX_RECOMMENDED",
+        "ROLLBACK_REQUIRES_OLD_INDEX",
     ]
 
 
@@ -90,6 +100,7 @@ def test_cli_check_text_preserves_keyed_paths(tmp_path) -> None:
 
     assert result.exit_code == 0
     assert "caches[support_rag_prod_v4].namespace" in result.output
+    assert "Invalidation rules triggered:" in result.output
 
 
 def test_cli_check_rejects_invalid_format(tmp_path) -> None:

@@ -101,13 +101,13 @@ Validation catches missing required sections, empty strings, invalid numeric val
 
 ## Diff Output
 
-`rag-blast check` returns deterministic, categorized manifest changes. The current report does not assign risk yet; risk rules are planned next.
+`rag-blast check` returns deterministic, categorized manifest changes and triggered risk rules.
 
-Example JSON output includes paths, categories, summaries, and old/new values:
+Example JSON output includes paths, categories, summaries, old/new values, rule findings, and the highest triggered severity. This excerpt shows the shape:
 
 ```json
 {
-  "risk": "UNASSESSED",
+  "risk": "HIGH",
   "change_count": 2,
   "categories": [
     "embedding_model_changed",
@@ -128,8 +128,39 @@ Example JSON output includes paths, categories, summaries, and old/new values:
       "old": "text-embedding-ada-002",
       "new": "text-embedding-3-large"
     }
-  ]
+  ],
+  "finding_count": 6,
+  "findings": [
+    {
+      "rule_id": "REEMBED_REQUIRED",
+      "severity": "HIGH",
+      "summary": "Embedding provider, model, dimensions, or chunking changed.",
+      "recommendation": "Rebuild document embeddings before serving traffic from the changed embedding or chunking configuration.",
+      "change_paths": ["embedding.model"]
+    }
+  ],
+  "note": "Additional findings omitted from this excerpt."
 }
+```
+
+## Rules
+
+Initial deterministic rules:
+
+- `REEMBED_REQUIRED`
+- `VECTOR_INDEX_INCOMPATIBLE`
+- `SEMANTIC_CACHE_UNSAFE`
+- `RETRIEVAL_BASELINE_STALE`
+- `CHUNKING_CHANGED`
+- `RERANKER_CHANGED`
+- `RETRIEVER_BEHAVIOR_CHANGED`
+- `SHADOW_INDEX_RECOMMENDED`
+- `ROLLBACK_REQUIRES_OLD_INDEX`
+
+Explain a rule locally:
+
+```bash
+rag-blast explain REEMBED_REQUIRED
 ```
 
 ## Repository
