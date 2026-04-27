@@ -1,0 +1,35 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "rag-blast-radius"
+version = "0.1.0"
+description = "Pre-deploy safety checks for RAG changes"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pydantic>=2.0.0",
+  "rich>=13.0.0",
+  "typer>=0.12.0",
+]
+
+[project.scripts]
+rag-blast = "rag_blast.cli:app"
+
+[dependency-groups]
+dev = [
+  "pytest>=8.0.0",
+  "ruff>=0.6.0",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/rag_blast"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
