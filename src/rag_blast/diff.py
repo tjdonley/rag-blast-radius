@@ -66,7 +66,18 @@ FIELD_CATEGORIES: dict[str, tuple[str, str]] = {
     "retriever.hybrid": ("hybrid_retrieval_changed", "Hybrid retrieval setting changed"),
 }
 
-EMBEDDING_PATHS = frozenset({"embedding.provider", "embedding.model", "embedding.dimensions"})
+CACHE_SENSITIVE_CATEGORIES = frozenset(
+    {
+        "embedding_provider_changed",
+        "embedding_model_changed",
+        "embedding_dimensions_changed",
+        "retriever_top_k_changed",
+        "hybrid_retrieval_changed",
+        "reranker_added",
+        "reranker_removed",
+        "reranker_changed",
+    }
+)
 
 
 def diff_manifests(old: dict[str, Any], new: dict[str, Any]) -> ManifestDiff:
@@ -188,7 +199,7 @@ def _diff_keyed_lists(
 def _semantic_cache_namespace_changes(
     old: dict[str, Any], new: dict[str, Any], field_changes: list[ManifestChange]
 ) -> list[ManifestChange]:
-    if not any(change.path in EMBEDDING_PATHS for change in field_changes):
+    if not any(change.category in CACHE_SENSITIVE_CATEGORIES for change in field_changes):
         return []
 
     old_namespaces = _semantic_cache_namespaces(old)
@@ -201,7 +212,7 @@ def _semantic_cache_namespace_changes(
             old=namespace,
             new=namespace,
             category="semantic_cache_namespace_unchanged",
-            summary="Semantic cache namespace unchanged after embedding change",
+            summary="Semantic cache namespace unchanged after embedding or retrieval change",
         )
         for namespace in unchanged_namespaces
     ]

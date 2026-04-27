@@ -112,6 +112,18 @@ def test_evaluate_rules_returns_expected_rule_sets(
     assert _finding_ids(_diff_with_change(path, new_value)) == expected_rule_ids
 
 
+def test_evaluate_rules_does_not_trigger_semantic_cache_rule_without_cache() -> None:
+    old = starter_manifest()
+    old["caches"] = []
+    new = deepcopy(old)
+    new["retriever"]["top_k"] = 12
+
+    assert _finding_ids(diff_manifests(old, new)) == [
+        "RETRIEVAL_BASELINE_STALE",
+        "RETRIEVER_BEHAVIOR_CHANGED",
+    ]
+
+
 def test_evaluate_rules_includes_triggering_change_paths() -> None:
     findings = evaluate_rules(_diff_with_change("chunking.chunk_size", 1200))
     chunking_finding = next(

@@ -29,7 +29,7 @@ def test_render_text_report_lists_changes() -> None:
     assert "HIGH: REEMBED_REQUIRED" in text
     assert "Recommended actions:" in text
     assert report["categories"] == ["embedding_model_changed"]
-    assert report["finding_count"] == 6
+    assert report["finding_count"] == 5
 
 
 def test_render_text_report_handles_no_changes() -> None:

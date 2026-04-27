@@ -66,18 +66,19 @@ def test_diff_manifests_categorizes_core_field_changes(
     path: str, new_value: object, category: str
 ) -> None:
     old = starter_manifest()
+    old["caches"] = []
     new = deepcopy(old)
     _set_path(new, path, new_value)
 
     manifest_diff = diff_manifests(old, new)
 
     assert (path, category) in [(change.path, change.category) for change in manifest_diff.changes]
-    if not path.startswith("embedding."):
-        assert manifest_diff.change_count == 1
+    assert manifest_diff.change_count == 1
 
 
 def test_diff_manifests_detects_reranker_added() -> None:
     old = starter_manifest()
+    old["caches"] = []
     new = deepcopy(old)
     new["retriever"]["reranker"] = {"provider": "cohere", "model": "rerank-english-v3.0"}
 
@@ -90,6 +91,7 @@ def test_diff_manifests_detects_reranker_added() -> None:
 
 def test_diff_manifests_detects_reranker_removed() -> None:
     old = starter_manifest()
+    old["caches"] = []
     old["retriever"]["reranker"] = {"provider": "cohere", "model": "rerank-english-v3.0"}
     new = deepcopy(old)
     new["retriever"]["reranker"] = None
@@ -122,6 +124,7 @@ def test_diff_manifests_classifies_reranker_removed_when_new_state_is_empty() ->
 
 def test_diff_manifests_detects_nested_reranker_changes() -> None:
     old = starter_manifest()
+    old["caches"] = []
     old["retriever"]["reranker"] = {"provider": "cohere", "model": "rerank-english-v3.0"}
     new = deepcopy(old)
     new["retriever"]["reranker"]["model"] = "rerank-v3.5"
@@ -135,6 +138,7 @@ def test_diff_manifests_detects_nested_reranker_changes() -> None:
 
 def test_diff_manifests_detects_nested_reranker_field_added_as_changed() -> None:
     old = starter_manifest()
+    old["caches"] = []
     old["retriever"]["reranker"] = {"model": "rerank-english-v3.0"}
     new = deepcopy(old)
     new["retriever"]["reranker"]["provider"] = "cohere"
@@ -148,6 +152,7 @@ def test_diff_manifests_detects_nested_reranker_field_added_as_changed() -> None
 
 def test_diff_manifests_detects_nested_reranker_field_removed_as_changed() -> None:
     old = starter_manifest()
+    old["caches"] = []
     old["retriever"]["reranker"] = {"provider": "cohere", "model": "rerank-english-v3.0"}
     new = deepcopy(old)
     del new["retriever"]["reranker"]["provider"]
@@ -234,6 +239,31 @@ def test_diff_manifests_detects_semantic_cache_namespace_unchanged_after_embeddi
 
     assert ("caches[support_rag_prod_v4].namespace", "semantic_cache_namespace_unchanged") in [
         (change.path, change.category) for change in manifest_diff.changes
+    ]
+
+
+def test_diff_manifests_detects_semantic_cache_namespace_unchanged_after_retriever_change() -> None:
+    old = starter_manifest()
+    new = deepcopy(old)
+    new["retriever"]["top_k"] = 12
+
+    manifest_diff = diff_manifests(old, new)
+
+    assert ("caches[support_rag_prod_v4].namespace", "semantic_cache_namespace_unchanged") in [
+        (change.path, change.category) for change in manifest_diff.changes
+    ]
+
+
+def test_diff_manifests_does_not_emit_semantic_cache_signal_without_cache() -> None:
+    old = starter_manifest()
+    old["caches"] = []
+    new = deepcopy(old)
+    new["retriever"]["top_k"] = 12
+
+    manifest_diff = diff_manifests(old, new)
+
+    assert "semantic_cache_namespace_unchanged" not in [
+        change.category for change in manifest_diff.changes
     ]
 
 
