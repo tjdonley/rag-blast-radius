@@ -8,9 +8,7 @@ Changing one component can silently invalidate the others. `rag-blast-radius` is
 
 ## Status
 
-The CLI includes package wiring, starter manifest generation, typed manifest validation, categorized manifest diffing, deterministic risk rules, CI-friendly reports, rule explanations, examples, and tests.
-
-The GitHub Action and integrations are planned in `BUILD_PLAN.md`.
+The CLI includes package wiring, starter manifest generation, typed manifest validation, categorized manifest diffing, deterministic risk rules, CI-friendly reports, a GitHub Action wrapper, rule explanations, examples, and tests.
 
 ## Install Locally
 
@@ -65,6 +63,35 @@ Explain a rule:
 ```bash
 rag-blast explain REEMBED_REQUIRED
 ```
+
+## GitHub Action
+
+Use the action in pull requests to block risky RAG manifest changes before deployment:
+
+```yaml
+name: RAG Blast Radius
+
+on:
+  pull_request:
+
+jobs:
+  rag-blast:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check RAG blast radius
+        id: rag_blast
+        uses: tjdonley/rag-blast-radius@v0
+        with:
+          old_manifest: manifests/rag-prod.json
+          new_manifest: .rag-manifest.json
+          fail_on: high
+```
+
+The action prints the normal text report, writes a job summary, and exposes `risk`, `change_count`, `finding_count`, and `unassessed_change_count` outputs. Set `format: json` when workflow automation needs the raw JSON report in the logs.
+
+See `docs/github-action.md` for all action inputs, outputs, and a JSON workflow example.
 
 ## Manifest Schema
 
