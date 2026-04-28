@@ -59,7 +59,7 @@ def scan_llamaindex_qdrant(source: Path) -> IntegrationScan:
             warnings.append(f"Skipped {file_path}: {error}.")
             continue
 
-        visitor = _LlamaIndexQdrantVisitor(file_path, _collect_constants(tree))
+        visitor = _LlamaIndexQdrantVisitor(file_path)
         visitor.visit(tree)
         warnings.extend(visitor.warnings)
         for field_path, discovered_values in visitor.values.items():
@@ -76,19 +76,30 @@ def render_partial_manifest(manifest: dict[str, Any]) -> str:
 
 
 class _LlamaIndexQdrantVisitor(ast.NodeVisitor):
-    def __init__(self, file_path: Path, constants: dict[str, Any]) -> None:
+    def __init__(self, file_path: Path) -> None:
         self.file_path = file_path
-        self.constants = constants
+        self.scopes: list[dict[str, Any]] = [{}]
         self.values: dict[str, list[DiscoveredValue]] = {}
         self.warnings: list[str] = []
 
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_nested_scope(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_nested_scope(node)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self._visit_nested_scope(node)
+
     def visit_Assign(self, node: ast.Assign) -> None:
+        self._record_constant_assignments(node.targets, node.value)
         for target in node.targets:
             self._record_settings_assignment(target, node.value, node)
         self.generic_visit(node)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         if node.value is not None:
+            self._record_constant_assignments((node.target,), node.value)
             self._record_settings_assignment(node.target, node.value, node)
         self.generic_visit(node)
 
@@ -132,7 +143,7 @@ class _LlamaIndexQdrantVisitor(ast.NodeVisitor):
 
         model = self._keyword_value(node, "model", "model_name", "deployment_name", "engine")
         if model is _MISSING and node.args:
-            model = _literal_value(node.args[0], self.constants)
+            model = _literal_value(node.args[0], self._constants())
         self._add_string("embedding.model", model, node)
 
         dimensions = self._keyword_value(node, "dimensions", "embed_dim")
@@ -144,7 +155,7 @@ class _LlamaIndexQdrantVisitor(ast.NodeVisitor):
         self._add_string("embedding.provider", provider, node)
         model = self._keyword_value(node, "model_name", "model")
         if model is _MISSING and node.args:
-            model = _literal_value(node.args[0], self.constants)
+            model = _literal_value(node.args[0], self._constants())
         self._add_string("embedding.model", model, node)
 
     def _record_chunking(self, node: ast.Call, *, strategy: str) -> None:
@@ -166,7 +177,9 @@ class _LlamaIndexQdrantVisitor(ast.NodeVisitor):
         self._add_bool("retriever.hybrid", hybrid, node)
 
     def _record_reranker(self, node: ast.Call, *, provider: str | None) -> None:
-        if provider is not None:
+        if provider is None:
+            self._add_value("retriever.reranker.provider", None, node)
+        else:
             self._add_string("retriever.reranker.provider", provider, node)
         model = self._keyword_value(node, "model", "model_name")
         self._add_string("retriever.reranker.model", model, node)
@@ -175,7 +188,7 @@ class _LlamaIndexQdrantVisitor(ast.NodeVisitor):
         self, target: ast.expr, value_node: ast.expr, location_node: ast.AST
     ) -> None:
         target_name = _attribute_name(target)
-        value = _literal_value(value_node, self.constants)
+        value = _literal_value(value_node, self._constants())
         if target_name.endswith("Settings.chunk_size"):
             self._add_positive_int("chunking.chunk_size", value, location_node)
             self._add_string("chunking.strategy", "llamaindex_settings", location_node)
@@ -186,8 +199,37 @@ class _LlamaIndexQdrantVisitor(ast.NodeVisitor):
     def _keyword_value(self, node: ast.Call, *names: str) -> Any:
         for keyword in node.keywords:
             if keyword.arg in names:
-                return _literal_value(keyword.value, self.constants)
+                return _literal_value(keyword.value, self._constants())
         return _MISSING
+
+    def _record_constant_assignments(
+        self, targets: tuple[ast.expr, ...] | list[ast.expr], value_node: ast.expr
+    ) -> None:
+        value = _literal_value(value_node, self._constants())
+        for target in targets:
+            if isinstance(target, ast.Name):
+                self.scopes[-1][target.id] = value
+
+    def _visit_nested_scope(self, node: ast.AST) -> None:
+        self.scopes.append({})
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            self._record_function_arguments(node.args)
+        self.generic_visit(node)
+        self.scopes.pop()
+
+    def _record_function_arguments(self, arguments: ast.arguments) -> None:
+        for argument in (*arguments.posonlyargs, *arguments.args, *arguments.kwonlyargs):
+            self.scopes[-1][argument.arg] = _MISSING
+        if arguments.vararg is not None:
+            self.scopes[-1][arguments.vararg.arg] = _MISSING
+        if arguments.kwarg is not None:
+            self.scopes[-1][arguments.kwarg.arg] = _MISSING
+
+    def _constants(self) -> dict[str, Any]:
+        constants: dict[str, Any] = {}
+        for scope in self.scopes:
+            constants.update(scope)
+        return constants
 
     def _add_string(self, field_path: str, value: Any, node: ast.AST) -> None:
         if value is _MISSING:
@@ -347,23 +389,6 @@ def _python_files(source: Path) -> list[Path]:
 def _is_skipped(path: Path, source: Path) -> bool:
     relative_parts = path.relative_to(source).parts[:-1]
     return any(part in SKIP_DIR_NAMES or part.startswith(".") for part in relative_parts)
-
-
-def _collect_constants(tree: ast.AST) -> dict[str, Any]:
-    constants: dict[str, Any] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Assign):
-            value = _literal_value(node.value, constants)
-            if value is _MISSING:
-                continue
-            for target in node.targets:
-                if isinstance(target, ast.Name):
-                    constants[target.id] = value
-        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            value = _literal_value(node.value, constants) if node.value is not None else _MISSING
-            if value is not _MISSING:
-                constants[node.target.id] = value
-    return constants
 
 
 def _literal_value(node: ast.AST, constants: dict[str, Any]) -> Any:

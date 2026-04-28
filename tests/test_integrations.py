@@ -112,6 +112,70 @@ second = OpenAIEmbedding(model="text-embedding-3-large")
     )
 
 
+def test_llamaindex_qdrant_scan_resolves_constants_in_lexical_scope(tmp_path) -> None:
+    source = tmp_path / "rag_app.py"
+    source.write_text(
+        """
+from llama_index.vector_stores.qdrant import QdrantVectorStore
+
+COLLECTION = "prod_docs"
+
+def helper() -> None:
+    COLLECTION = "test_docs"
+
+vector_store = QdrantVectorStore(collection_name=COLLECTION)
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    scan = scan_llamaindex_qdrant(source)
+
+    assert scan.manifest["vector_store"]["collection"] == "prod_docs"
+    assert not any("test_docs" in warning for warning in scan.warnings)
+
+
+def test_llamaindex_qdrant_scan_resolves_function_local_constants(tmp_path) -> None:
+    source = tmp_path / "rag_app.py"
+    source.write_text(
+        """
+from llama_index.vector_stores.qdrant import QdrantVectorStore
+
+COLLECTION = "prod_docs"
+
+def build_vector_store():
+    COLLECTION = "test_docs"
+    return QdrantVectorStore(collection_name=COLLECTION)
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    scan = scan_llamaindex_qdrant(source)
+
+    assert scan.manifest["vector_store"]["collection"] == "test_docs"
+
+
+def test_llamaindex_qdrant_scan_does_not_use_outer_constant_for_dynamic_local(
+    tmp_path,
+) -> None:
+    source = tmp_path / "rag_app.py"
+    source.write_text(
+        """
+from llama_index.vector_stores.qdrant import QdrantVectorStore
+
+COLLECTION = "prod_docs"
+
+def build_vector_store(COLLECTION):
+    return QdrantVectorStore(collection_name=COLLECTION)
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    scan = scan_llamaindex_qdrant(source)
+
+    assert scan.manifest["vector_store"] == {"provider": "qdrant"}
+    assert "vector_store.collection is required and must be filled manually." in scan.warnings
+
+
 def test_llamaindex_qdrant_scan_handles_factory_calls_and_incomplete_rerankers(
     tmp_path,
 ) -> None:
@@ -135,6 +199,25 @@ reranker = CohereRerank()
         "chunk_overlap": 40,
     }
     assert scan.manifest["retriever"]["reranker"] == {"provider": "cohere"}
+    assert any("retriever.reranker.model is required" in warning for warning in scan.warnings)
+
+
+def test_llamaindex_qdrant_scan_preserves_unknown_provider_reranker_detection(
+    tmp_path,
+) -> None:
+    source = tmp_path / "rag_app.py"
+    source.write_text(
+        """
+from llama_index.core.postprocessor import LLMRerank
+
+reranker = LLMRerank()
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    scan = scan_llamaindex_qdrant(source)
+
+    assert scan.manifest["retriever"]["reranker"] == {"provider": None}
     assert any("retriever.reranker.model is required" in warning for warning in scan.warnings)
 
 
