@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" viewBox="0 0 980 330">
+  <title id="title">RAG blast radius check flow</title>
+  <desc id="desc">A flow diagram showing old and new manifests passing through validation, diffing, rules, report output, and CI gating.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#eefbff"/>
+    </linearGradient>
+    <linearGradient id="hot" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0%" stop-color="#19c2ff"/>
+      <stop offset="100%" stop-color="#72e6ae"/>
+    </linearGradient>
+    <style>
+      .box { fill: #ffffff; stroke: #c7e7ff; stroke-width: 2; }
+      .title { fill: #102a43; font: 800 20px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .sub { fill: #486581; font: 500 14px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .arrow { stroke: #3fb5e8; stroke-width: 3; stroke-linecap: round; stroke-linejoin: round; fill: none; marker-end: url(#arrowhead); }
+      .badge { fill: url(#hot); }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="7" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L8,3 z" fill="#3fb5e8"/>
+    </marker>
+  </defs>
+  <rect width="980" height="330" rx="28" fill="url(#bg)"/>
+  <g transform="translate(42 76)">
+    <rect width="130" height="178" rx="18" class="box"/>
+    <rect x="20" y="25" width="90" height="34" rx="9" fill="#edfaff"/>
+    <rect x="20" y="73" width="90" height="34" rx="9" fill="#edfaff"/>
+    <text x="65" y="139" text-anchor="middle" class="title">manifests</text>
+    <text x="65" y="164" text-anchor="middle" class="sub">old + new</text>
+  </g>
+  <path d="M190 165 H245" class="arrow"/>
+  <g transform="translate(260 76)">
+    <rect width="132" height="178" rx="18" class="box"/>
+    <circle cx="66" cy="54" r="25" fill="#19c2ff"/>
+    <path d="M54 55 l9 9 l18 -22" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="66" y="139" text-anchor="middle" class="title">validate</text>
+    <text x="66" y="164" text-anchor="middle" class="sub">typed schema</text>
+  </g>
+  <path d="M410 165 H465" class="arrow"/>
+  <g transform="translate(480 76)">
+    <rect width="132" height="178" rx="18" class="box"/>
+    <circle cx="51" cy="53" r="10" class="badge"/>
+    <circle cx="82" cy="79" r="10" class="badge"/>
+    <circle cx="72" cy="35" r="10" class="badge"/>
+    <path d="M51 53 L72 35 L82 79 Z" fill="none" stroke="#80d7ff" stroke-width="4"/>
+    <text x="66" y="139" text-anchor="middle" class="title">diff</text>
+    <text x="66" y="164" text-anchor="middle" class="sub">semantic paths</text>
+  </g>
+  <path d="M630 165 H685" class="arrow"/>
+  <g transform="translate(700 76)">
+    <rect width="132" height="178" rx="18" class="box"/>
+    <rect x="34" y="32" width="64" height="64" rx="14" fill="#536dff"/>
+    <path d="M49 64 l11 11 l25 -29" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+    <text x="66" y="139" text-anchor="middle" class="title">report</text>
+    <text x="66" y="164" text-anchor="middle" class="sub">text or JSON</text>
+  </g>
+  <path d="M850 165 H905" class="arrow"/>
+  <g transform="translate(850 258)">
+    <rect x="-8" y="-10" width="106" height="38" rx="19" fill="#e9fff6" stroke="#91e6c8"/>
+    <text x="45" y="15" text-anchor="middle" fill="#116149" font-family="system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="14" font-weight="800">CI ready</text>
+  </g>
+  <g transform="translate(914 129)">
+    <circle cx="34" cy="36" r="31" fill="#ff8a65"/>
+    <path d="M20 38 l10 10 l20 -25" fill="none" stroke="#ffffff" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+</svg>

@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc" viewBox="0 0 920 520">
+  <title id="title">RAG blast radius map</title>
+  <desc id="desc">A diagram showing one RAG change radiating into embeddings, vector indexes, semantic caches, eval baselines, retrievers, rerankers, and rollout plans.</desc>
+  <defs>
+    <linearGradient id="panel" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#f8fdff"/>
+      <stop offset="100%" stop-color="#edf8ff"/>
+    </linearGradient>
+    <linearGradient id="core" x1="0" x2="1" y1="0" y2="1">
+      <stop offset="0%" stop-color="#19c2ff"/>
+      <stop offset="100%" stop-color="#536dff"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#184b8a" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .label { fill: #102a43; font: 700 21px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .small { fill: #486581; font: 500 15px system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      .node { fill: #ffffff; stroke: #c9e7ff; stroke-width: 2; filter: url(#shadow); }
+      .line { stroke: #84c5f4; stroke-width: 3; stroke-linecap: round; }
+      .ring { fill: none; stroke: #91e6c8; stroke-width: 3; stroke-dasharray: 9 11; opacity: 0.8; }
+    </style>
+  </defs>
+  <rect width="920" height="520" rx="28" fill="url(#panel)"/>
+  <circle cx="460" cy="260" r="190" class="ring"/>
+  <circle cx="460" cy="260" r="133" fill="none" stroke="#c7efff" stroke-width="3"/>
+  <line x1="460" y1="260" x2="238" y2="104" class="line"/>
+  <line x1="460" y1="260" x2="683" y2="104" class="line"/>
+  <line x1="460" y1="260" x2="780" y2="260" class="line"/>
+  <line x1="460" y1="260" x2="682" y2="416" class="line"/>
+  <line x1="460" y1="260" x2="238" y2="416" class="line"/>
+  <line x1="460" y1="260" x2="140" y2="260" class="line"/>
+
+  <circle cx="460" cy="260" r="82" fill="url(#core)" filter="url(#shadow)"/>
+  <text x="460" y="248" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="23" font-weight="800">RAG</text>
+  <text x="460" y="278" text-anchor="middle" fill="#ffffff" font-family="system-ui, -apple-system, BlinkMacSystemFont, Segoe UI, sans-serif" font-size="23" font-weight="800">change</text>
+
+  <g>
+    <rect x="86" y="62" width="304" height="84" rx="18" class="node"/>
+    <circle cx="126" cy="104" r="16" fill="#19c2ff"/>
+    <text x="154" y="98" class="label">Embeddings</text>
+    <text x="154" y="121" class="small">provider, model, dimensions</text>
+  </g>
+  <g>
+    <rect x="532" y="62" width="302" height="84" rx="18" class="node"/>
+    <circle cx="572" cy="104" r="16" fill="#72e6ae"/>
+    <text x="600" y="98" class="label">Chunking</text>
+    <text x="600" y="121" class="small">strategy, size, overlap</text>
+  </g>
+  <g>
+    <rect x="652" y="218" width="256" height="84" rx="18" class="node"/>
+    <circle cx="692" cy="260" r="16" fill="#536dff"/>
+    <text x="720" y="254" class="label">Vector index</text>
+    <text x="720" y="277" class="small">collection and compatibility</text>
+  </g>
+  <g>
+    <rect x="532" y="374" width="302" height="84" rx="18" class="node"/>
+    <circle cx="572" cy="416" r="16" fill="#ff8a65"/>
+    <text x="600" y="410" class="label">Semantic cache</text>
+    <text x="600" y="433" class="small">namespace and stale hits</text>
+  </g>
+  <g>
+    <rect x="86" y="374" width="304" height="84" rx="18" class="node"/>
+    <circle cx="126" cy="416" r="16" fill="#ffc857"/>
+    <text x="154" y="410" class="label">Eval baselines</text>
+    <text x="154" y="433" class="small">retrieval and answer quality</text>
+  </g>
+  <g>
+    <rect x="12" y="218" width="256" height="84" rx="18" class="node"/>
+    <circle cx="52" cy="260" r="16" fill="#00b8a9"/>
+    <text x="80" y="254" class="label">Retriever</text>
+    <text x="80" y="277" class="small">top_k, hybrid, reranker</text>
+  </g>
+</svg>
