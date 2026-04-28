@@ -8,7 +8,7 @@ Changing one component can silently invalidate the others. `rag-blast-radius` is
 
 ## Status
 
-The CLI includes package wiring, starter manifest generation, typed manifest validation, categorized manifest diffing, deterministic risk rules, CI-friendly reports, a GitHub Action wrapper, rule explanations, examples, and tests.
+The CLI includes package wiring, starter manifest generation, typed manifest validation, categorized manifest diffing, deterministic risk rules, CI-friendly reports, a GitHub Action wrapper, a narrow LlamaIndex + Qdrant integration, rule explanations, examples, and tests.
 
 ## Install Locally
 
@@ -57,6 +57,16 @@ rag-blast check --old examples/openai_ada_to_3_large/old.json --new examples/ope
 ```
 
 See `examples/README.md` for the full catalog of migration scenarios and expected report summaries.
+
+Generate a partial manifest draft from a LlamaIndex + Qdrant Python config:
+
+```bash
+rag-blast integrations llamaindex-qdrant --source src/rag_app.py --output .rag-manifest.partial.json
+```
+
+The integration only inspects known local configuration patterns. It prints `Manual review required` warnings for required manifest fields that must be filled manually before the draft is used with `rag-blast check`.
+
+See `docs/llamaindex-qdrant.md` for supported patterns, limitations, and example output.
 
 Explain a rule:
 
