@@ -176,6 +176,52 @@ def build_vector_store(COLLECTION):
     assert "vector_store.collection is required and must be filled manually." in scan.warnings
 
 
+def test_llamaindex_qdrant_scan_does_not_use_class_body_constants_in_methods(
+    tmp_path,
+) -> None:
+    source = tmp_path / "rag_app.py"
+    source.write_text(
+        """
+from llama_index.vector_stores.qdrant import QdrantVectorStore
+
+COLLECTION = "prod_docs"
+
+class Builder:
+    COLLECTION = "test_docs"
+
+    def build(self):
+        return QdrantVectorStore(collection_name=COLLECTION)
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    scan = scan_llamaindex_qdrant(source)
+
+    assert scan.manifest["vector_store"]["collection"] == "prod_docs"
+
+
+def test_llamaindex_qdrant_scan_uses_class_body_constants_in_class_body(
+    tmp_path,
+) -> None:
+    source = tmp_path / "rag_app.py"
+    source.write_text(
+        """
+from llama_index.vector_stores.qdrant import QdrantVectorStore
+
+COLLECTION = "prod_docs"
+
+class Builder:
+    COLLECTION = "test_docs"
+    vector_store = QdrantVectorStore(collection_name=COLLECTION)
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    scan = scan_llamaindex_qdrant(source)
+
+    assert scan.manifest["vector_store"]["collection"] == "test_docs"
+
+
 def test_llamaindex_qdrant_scan_handles_factory_calls_and_incomplete_rerankers(
     tmp_path,
 ) -> None:

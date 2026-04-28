@@ -79,17 +79,18 @@ class _LlamaIndexQdrantVisitor(ast.NodeVisitor):
     def __init__(self, file_path: Path) -> None:
         self.file_path = file_path
         self.scopes: list[dict[str, Any]] = [{}]
+        self.scope_kinds = ["module"]
         self.values: dict[str, list[DiscoveredValue]] = {}
         self.warnings: list[str] = []
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        self._visit_nested_scope(node)
+        self._visit_nested_scope(node, kind="function")
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        self._visit_nested_scope(node)
+        self._visit_nested_scope(node, kind="function")
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        self._visit_nested_scope(node)
+        self._visit_nested_scope(node, kind="class")
 
     def visit_Assign(self, node: ast.Assign) -> None:
         self._record_constant_assignments(node.targets, node.value)
@@ -210,11 +211,13 @@ class _LlamaIndexQdrantVisitor(ast.NodeVisitor):
             if isinstance(target, ast.Name):
                 self.scopes[-1][target.id] = value
 
-    def _visit_nested_scope(self, node: ast.AST) -> None:
+    def _visit_nested_scope(self, node: ast.AST, *, kind: str) -> None:
         self.scopes.append({})
+        self.scope_kinds.append(kind)
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
             self._record_function_arguments(node.args)
         self.generic_visit(node)
+        self.scope_kinds.pop()
         self.scopes.pop()
 
     def _record_function_arguments(self, arguments: ast.arguments) -> None:
@@ -227,7 +230,13 @@ class _LlamaIndexQdrantVisitor(ast.NodeVisitor):
 
     def _constants(self) -> dict[str, Any]:
         constants: dict[str, Any] = {}
-        for scope in self.scopes:
+        current_class_scope_index = None
+        if self.scope_kinds[-1] == "class":
+            current_class_scope_index = len(self.scope_kinds) - 1
+
+        for index, (kind, scope) in enumerate(zip(self.scope_kinds, self.scopes, strict=True)):
+            if kind == "class" and index != current_class_scope_index:
+                continue
             constants.update(scope)
         return constants
 
