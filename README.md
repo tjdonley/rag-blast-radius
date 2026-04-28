@@ -2,9 +2,15 @@
 
 Pre-deploy safety checks for RAG changes.
 
-RAG systems accumulate hidden state: document embeddings, vector indexes, semantic caches, chunking configs, retriever settings, rerankers, eval baselines, and prompt assumptions.
+RAG systems are full of hidden state: document embeddings, vector indexes, semantic caches, chunking configs, retriever settings, rerankers, eval baselines, and prompt assumptions.
 
-Changing one component can silently invalidate the others. `rag-blast-radius` is an OSS CLI that makes those dependencies explicit before deployment.
+Changing one component can silently invalidate the others. `rag-blast-radius` diffs RAG manifests and reports what becomes unsafe before you deploy.
+
+## Why RAG Changes Are Risky
+
+RAG deployments often couple independently managed systems: an embedding model, a vector collection, chunking code, retriever settings, rerankers, semantic caches, and eval baselines. A small code or config change can make existing vectors incomparable, leave caches keyed to stale embeddings, or make retrieval evals no longer describe production behavior.
+
+`rag-blast-radius` makes those dependencies explicit by comparing two manifests and applying deterministic local rules. It does not call hosted services or inspect production data.
 
 ## Status
 
@@ -72,6 +78,30 @@ Explain a rule:
 
 ```bash
 rag-blast explain REEMBED_REQUIRED
+```
+
+## Example Check Output
+
+The example command above produces a high-risk report with required rollout steps. This excerpt omits additional cache changes, unassessed paths, and rollout lines:
+
+```text
+RAG BLAST RADIUS REPORT
+
+Risk: HIGH
+
+Detected changes:
+  - embedding.dimensions (embedding_dimensions_changed): Embedding dimensions changed; 1536 -> 3072
+  - embedding.model (embedding_model_changed): Embedding model changed; text-embedding-ada-002 -> text-embedding-3-large
+  - vector_store.collection (vector_collection_changed): Vector collection changed; support_docs_v3 -> support_docs_v4
+
+Invalidation rules triggered:
+  - HIGH: REEMBED_REQUIRED - Embedding provider, model, dimensions, or chunking changed.
+  - HIGH: VECTOR_INDEX_INCOMPATIBLE - Existing vectors may not be comparable to new query vectors.
+  - MEDIUM: RETRIEVAL_BASELINE_STALE - Retrieval eval baselines may no longer describe the proposed system.
+
+Recommended rollout:
+  1. Regenerate document embeddings for the proposed manifest.
+  2. Build a shadow vector index before serving new query embeddings.
 ```
 
 ## GitHub Action
@@ -222,3 +252,22 @@ rag-blast explain REEMBED_REQUIRED
 ## Repository
 
 The public repository name is `rag-blast-radius` and the CLI command is `rag-blast`.
+
+## Non-Goals
+
+- Hosted service
+- Monitoring or online evaluation
+- Web dashboard
+- Enterprise approval workflows
+- Automatic full-repo scanning
+- Automatic migrations
+- Cost modeling
+- Broad vector database support in v0
+
+## Roadmap
+
+- Keep the manifest schema simple enough to write and review manually.
+- Expand deterministic rules only when they map to clear rollout actions.
+- Add integrations when real users ask for specific frameworks or vector databases.
+- Prefer local, inspectable outputs over hosted workflows until usage proves a stronger need.
+- Consider signed release reports, manifest history, and policy-as-code after the CLI has real adoption.
