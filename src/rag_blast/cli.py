@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from pathlib import Path
 
 import typer
@@ -9,7 +8,13 @@ from rich.console import Console
 from rag_blast import __version__
 from rag_blast.diff import diff_manifests
 from rag_blast.manifest import ManifestLoadError, load_manifest, write_starter_manifest
-from rag_blast.report import build_report, render_text_report
+from rag_blast.report import (
+    build_report,
+    normalize_fail_on,
+    render_json_report,
+    render_text_report,
+    should_fail_report,
+)
 from rag_blast.rules import get_rule
 
 app = typer.Typer(
@@ -80,10 +85,22 @@ def check_command(
         "--format",
         help="Report format: text or json.",
     ),
+    fail_on: str = typer.Option(
+        "none",
+        "--fail-on",
+        help="Exit with code 1 when risk is at least: none, low, medium, or high.",
+    ),
 ) -> None:
     """Compare two RAG manifests."""
     if output_format not in {"text", "json"}:
         console.print("[red]Unsupported format.[/red] Use 'text' or 'json'.")
+        raise typer.Exit(1)
+
+    fail_threshold = normalize_fail_on(fail_on)
+    if fail_threshold is None:
+        console.print(
+            "[red]Unsupported fail-on threshold.[/red] Use 'none', 'low', 'medium', or 'high'."
+        )
         raise typer.Exit(1)
 
     try:
@@ -97,10 +114,12 @@ def check_command(
     report = build_report(changes)
 
     if output_format == "json":
-        typer.echo(json.dumps(report, indent=2))
-        return
+        typer.echo(render_json_report(report))
+    else:
+        console.print(render_text_report(report), markup=False)
 
-    console.print(render_text_report(report), markup=False)
+    if should_fail_report(report, fail_threshold):
+        raise typer.Exit(1)
 
 
 @app.command("explain")
