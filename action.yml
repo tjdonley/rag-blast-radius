@@ -1,0 +1,178 @@
+name: RAG Blast Radius
+description: Pre-deploy safety checks for RAG manifest changes
+author: tjdonley
+
+inputs:
+  old_manifest:
+    description: Path to the baseline RAG manifest.
+    required: true
+  new_manifest:
+    description: Path to the proposed RAG manifest.
+    required: true
+  fail_on:
+    description: >
+      Exit with code 1 when risk is at least this threshold. Use none to report only;
+      unassessed changes fail when any threshold is enabled.
+    required: false
+    default: high
+  format:
+    description: Report format to print in logs: text or json.
+    required: false
+    default: text
+  python_version:
+    description: Python version used to install and run rag-blast.
+    required: false
+    default: "3.12"
+
+outputs:
+  risk:
+    description: Top-level report risk: NONE, UNASSESSED, LOW, MEDIUM, or HIGH.
+    value: ${{ steps.run.outputs.risk }}
+  change_count:
+    description: Number of detected manifest changes.
+    value: ${{ steps.run.outputs.change_count }}
+  finding_count:
+    description: Number of triggered risk findings.
+    value: ${{ steps.run.outputs.finding_count }}
+  unassessed_change_count:
+    description: Number of detected changes that no rule assessed.
+    value: ${{ steps.run.outputs.unassessed_change_count }}
+
+runs:
+  using: composite
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python_version }}
+
+    - name: Install rag-blast
+      shell: bash
+      run: |
+        python -m pip install --upgrade pip
+        python -m pip install "$GITHUB_ACTION_PATH"
+
+    - name: Run rag-blast
+      id: run
+      shell: bash
+      env:
+        OLD_MANIFEST: ${{ inputs.old_manifest }}
+        NEW_MANIFEST: ${{ inputs.new_manifest }}
+        FAIL_ON: ${{ inputs.fail_on }}
+        REPORT_FORMAT: ${{ inputs.format }}
+      run: |
+        set -uo pipefail
+
+        REPORT_FORMAT=$(printf '%s' "$REPORT_FORMAT" | tr '[:upper:]' '[:lower:]')
+        FAIL_ON=$(printf '%s' "$FAIL_ON" | tr '[:upper:]' '[:lower:]')
+
+        case "$REPORT_FORMAT" in
+          text|json) ;;
+          *)
+            echo "::error::Unsupported report format: $REPORT_FORMAT. Use text or json."
+            exit 1
+            ;;
+        esac
+
+        case "$FAIL_ON" in
+          none|low|medium|high) ;;
+          *)
+            echo "::error::Unsupported fail_on threshold: $FAIL_ON. Use none, low, medium, or high."
+            exit 1
+            ;;
+        esac
+
+        TEXT_REPORT="$RUNNER_TEMP/rag-blast-report.out"
+        JSON_REPORT="$RUNNER_TEMP/rag-blast-report.json"
+
+        set +e
+        rag-blast check \
+          --old "$OLD_MANIFEST" \
+          --new "$NEW_MANIFEST" \
+          --format "$REPORT_FORMAT" \
+          --fail-on "$FAIL_ON" | tee "$TEXT_REPORT"
+        status=${PIPESTATUS[0]}
+        set -e
+
+        if [ "$REPORT_FORMAT" = "json" ]; then
+          cp "$TEXT_REPORT" "$JSON_REPORT"
+        else
+          set +e
+          rag-blast check \
+            --old "$OLD_MANIFEST" \
+            --new "$NEW_MANIFEST" \
+            --format json \
+            --fail-on none > "$JSON_REPORT"
+          json_status=$?
+          set -e
+
+          if [ "$json_status" -ne 0 ]; then
+            if [ "$status" -ne 0 ]; then
+              exit "$status"
+            fi
+            exit "$json_status"
+          fi
+        fi
+
+        if ! python - "$JSON_REPORT" >/dev/null 2>&1 <<'PY'
+        import json
+        import sys
+
+        with open(sys.argv[1], encoding="utf-8") as report_file:
+            json.load(report_file)
+        PY
+        then
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          echo "::error::rag-blast did not produce a valid JSON report."
+          exit 1
+        fi
+
+        python - "$JSON_REPORT" <<'PY' >> "$GITHUB_OUTPUT"
+        import json
+        import sys
+
+        with open(sys.argv[1], encoding="utf-8") as report_file:
+            report = json.load(report_file)
+
+        print(f"risk={report['risk']}")
+        print(f"change_count={report['change_count']}")
+        print(f"finding_count={report['finding_count']}")
+        print(f"unassessed_change_count={report['unassessed_change_count']}")
+        PY
+
+        python - "$JSON_REPORT" <<'PY' >> "$GITHUB_STEP_SUMMARY"
+        import json
+        import sys
+
+        with open(sys.argv[1], encoding="utf-8") as report_file:
+            report = json.load(report_file)
+
+        print("## RAG Blast Radius")
+        print()
+        print(f"- Risk: `{report['risk']}`")
+        print(f"- Changes: `{report['change_count']}`")
+        print(f"- Findings: `{report['finding_count']}`")
+        print(f"- Unassessed changes: `{report['unassessed_change_count']}`")
+
+        if report["findings"]:
+            print()
+            print("### Findings")
+            for finding in report["findings"]:
+                print(f"- `{finding['severity']}` `{finding['rule_id']}`: {finding['summary']}")
+
+        if report["unassessed_change_paths"]:
+            print()
+            print("### Unassessed Changes")
+            for path in report["unassessed_change_paths"]:
+                print(f"- `{path}`")
+
+        if report["recommended_rollout"]:
+            print()
+            print("### Recommended Rollout")
+            for index, step in enumerate(report["recommended_rollout"], start=1):
+                print(f"{index}. {step}")
+        PY
+
+        exit "$status"
