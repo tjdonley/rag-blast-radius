@@ -1,0 +1,16 @@
+{
+  "risk": "MEDIUM",
+  "change_count": 2,
+  "categories": [
+    "reranker_added",
+    "retriever_top_k_changed"
+  ],
+  "finding_count": 3,
+  "findings": [
+    "RETRIEVAL_BASELINE_STALE",
+    "RERANKER_CHANGED",
+    "RETRIEVER_BEHAVIOR_CHANGED"
+  ],
+  "unassessed_change_count": 0,
+  "unassessed_change_paths": []
+}

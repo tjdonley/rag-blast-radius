@@ -1,0 +1,24 @@
+{
+  "risk": "HIGH",
+  "change_count": 5,
+  "categories": [
+    "cache_changed",
+    "embedding_dimensions_changed",
+    "embedding_model_changed",
+    "semantic_cache_namespace_unchanged",
+    "vector_collection_changed"
+  ],
+  "finding_count": 6,
+  "findings": [
+    "REEMBED_REQUIRED",
+    "VECTOR_INDEX_INCOMPATIBLE",
+    "SEMANTIC_CACHE_UNSAFE",
+    "RETRIEVAL_BASELINE_STALE",
+    "SHADOW_INDEX_RECOMMENDED",
+    "ROLLBACK_REQUIRES_OLD_INDEX"
+  ],
+  "unassessed_change_count": 1,
+  "unassessed_change_paths": [
+    "caches[support_rag_prod_v4].embedding_model"
+  ]
+}

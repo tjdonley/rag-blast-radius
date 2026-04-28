@@ -58,6 +58,8 @@ From a repo checkout, try one of the included examples:
 rag-blast check --old examples/openai_ada_to_3_large/old.json --new examples/openai_ada_to_3_large/new.json
 ```
 
+See `examples/README.md` for the full catalog of migration scenarios and expected report summaries.
+
 Explain a rule:
 
 ```bash
