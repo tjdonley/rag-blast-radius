@@ -36,6 +36,24 @@ RAG deployments often couple independently managed systems: an embedding model, 
 - Can a reviewer understand the RAG deployment risk without reading app code?
 - Can CI get a stable JSON summary of the manifest diff?
 
+## When To Run It
+
+Run `rag-blast` before merging a change that modifies RAG configuration, retrieval code, index naming, cache namespaces, or eval baselines. It is designed for pull requests and release checks where the current production manifest can be compared with the proposed manifest.
+
+`rag-blast` is not a monitor or migration tool. It does not inspect production data, contact vector databases, or rebuild indexes; it tells reviewers what becomes unsafe if the proposed manifest ships.
+
+## What It Checks
+
+| Manifest area | Examples of risky drift |
+| --- | --- |
+| Embeddings | Provider, model, or vector dimensions changed. |
+| Chunking | Strategy, chunk size, or overlap changed. |
+| Vector store | Provider or collection changed; alias changes are reported for manual review. |
+| Retriever | `top_k`, hybrid retrieval, or reranker changed. |
+| Semantic caches | Cache namespace stayed the same after retrieval-sensitive changes. |
+| Evals | Retrieval eval datasets changed or were removed. |
+| Other manifest fields | Changes are reported as unassessed instead of silently ignored. |
+
 ## Status
 
 The CLI includes package wiring, starter manifest generation, typed manifest validation, categorized manifest diffing, deterministic risk rules, CI-friendly reports, a GitHub Action wrapper, a narrow LlamaIndex + Qdrant integration, rule explanations, examples, and tests.
@@ -55,6 +73,8 @@ rag-blast --help
 ```
 
 ## Quickstart
+
+If you are running from a repo checkout after `uv sync`, prefix commands with `uv run`, for example `uv run rag-blast --help`.
 
 Create a starter manifest:
 
@@ -83,7 +103,7 @@ rag-blast check --old old.json --new new.json --fail-on high
 From a repo checkout, try one of the included examples:
 
 ```bash
-rag-blast check --old examples/openai_ada_to_3_large/old.json --new examples/openai_ada_to_3_large/new.json
+uv run rag-blast check --old examples/openai_ada_to_3_large/old.json --new examples/openai_ada_to_3_large/new.json
 ```
 
 See `examples/README.md` for the full catalog of migration scenarios and expected report summaries.
@@ -118,7 +138,7 @@ rag-blast explain REEMBED_REQUIRED
 
 ## Example Check Output
 
-The example command above produces a high-risk report with required rollout steps. This excerpt omits additional cache changes, unassessed paths, and rollout lines:
+The `examples/openai_ada_to_3_large` check produces a high-risk report with required rollout steps. This excerpt keeps the important sections and shortens long cache values:
 
 ```text
 RAG BLAST RADIUS REPORT
@@ -126,6 +146,8 @@ RAG BLAST RADIUS REPORT
 Risk: HIGH
 
 Detected changes:
+  - caches[support_rag_prod_v4] (cache_changed): Cache configuration changed; ... -> <missing key>
+  - caches[support_rag_prod_v5] (cache_changed): Cache configuration changed; <missing key> -> ...
   - embedding.dimensions (embedding_dimensions_changed): Embedding dimensions changed; 1536 -> 3072
   - embedding.model (embedding_model_changed): Embedding model changed; text-embedding-ada-002 -> text-embedding-3-large
   - vector_store.collection (vector_collection_changed): Vector collection changed; support_docs_v3 -> support_docs_v4
@@ -134,10 +156,20 @@ Invalidation rules triggered:
   - HIGH: REEMBED_REQUIRED - Embedding provider, model, dimensions, or chunking changed.
   - HIGH: VECTOR_INDEX_INCOMPATIBLE - Existing vectors may not be comparable to new query vectors.
   - MEDIUM: RETRIEVAL_BASELINE_STALE - Retrieval eval baselines may no longer describe the proposed system.
+  - MEDIUM: SHADOW_INDEX_RECOMMENDED - The change should be rolled out through a shadow index.
+  - MEDIUM: ROLLBACK_REQUIRES_OLD_INDEX - Rollback depends on preserving the old index.
+
+Unassessed changes:
+  - caches[support_rag_prod_v4]
+  - caches[support_rag_prod_v5]
 
 Recommended rollout:
   1. Regenerate document embeddings for the proposed manifest.
   2. Build a shadow vector index before serving new query embeddings.
+  3. Replay representative retrieval evals and compare against baseline.
+  4. Canary or shadow traffic before switching production reads.
+  5. Keep the old index and cache namespace until the rollback window closes.
+  6. Review unassessed manifest changes before deployment.
 ```
 
 ## GitHub Action
@@ -263,21 +295,32 @@ Example JSON output includes paths, categories, summaries, old/new values, rule 
 }
 ```
 
-`--fail-on` accepts `none`, `low`, `medium`, or `high`. The default is `none`. If changes are present but no rule can assess them, the report risk is `UNASSESSED`; any enabled threshold fails that report so unknown-impact changes do not silently pass CI.
+`--fail-on` accepts `none`, `low`, `medium`, or `high`. The default is `none`.
+
+| Option | Exit behavior |
+| --- | --- |
+| `--fail-on none` | Always report without failing because of risk. Manifest load or validation errors still fail. |
+| `--fail-on high` | Exit 1 for `HIGH` risk or any unassessed change. |
+| `--fail-on medium` | Exit 1 for `MEDIUM` risk, `HIGH` risk, or any unassessed change. |
+| `--fail-on low` | Exit 1 for `LOW` risk, `MEDIUM` risk, `HIGH` risk, or any unassessed change. |
+
+If changes are present but no rule can assess them, the report risk is `UNASSESSED`. Mixed reports can also have a normal top-level risk plus unassessed change paths; any enabled threshold fails both cases so unknown-impact changes do not silently pass CI.
 
 ## Rules
 
 Initial deterministic rules:
 
-- `REEMBED_REQUIRED`
-- `VECTOR_INDEX_INCOMPATIBLE`
-- `SEMANTIC_CACHE_UNSAFE`
-- `RETRIEVAL_BASELINE_STALE`
-- `CHUNKING_CHANGED`
-- `RERANKER_CHANGED`
-- `RETRIEVER_BEHAVIOR_CHANGED`
-- `SHADOW_INDEX_RECOMMENDED`
-- `ROLLBACK_REQUIRES_OLD_INDEX`
+| Rule | Severity | Triggered by |
+| --- | --- | --- |
+| `REEMBED_REQUIRED` | HIGH | Embedding or chunking changes that require regenerated document embeddings. |
+| `VECTOR_INDEX_INCOMPATIBLE` | HIGH | Embedding provider, model, or dimensions changes. |
+| `SEMANTIC_CACHE_UNSAFE` | HIGH | Semantic cache namespace reused after embedding, chunking, or retrieval behavior changes. |
+| `RETRIEVAL_BASELINE_STALE` | MEDIUM | Embedding, chunking, retriever, reranker, or eval dataset changes. |
+| `CHUNKING_CHANGED` | HIGH | Chunking strategy, size, or overlap changes. |
+| `RERANKER_CHANGED` | MEDIUM | Reranker added, removed, or changed. |
+| `RETRIEVER_BEHAVIOR_CHANGED` | MEDIUM | Retriever `top_k`, hybrid retrieval, or reranker changes. |
+| `SHADOW_INDEX_RECOMMENDED` | MEDIUM | Embedding, chunking, or vector index changes. |
+| `ROLLBACK_REQUIRES_OLD_INDEX` | MEDIUM | Embedding, chunking, or vector index changes. |
 
 Explain a rule locally:
 
