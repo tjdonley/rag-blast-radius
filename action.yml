@@ -97,11 +97,36 @@ runs:
         if [ "$REPORT_FORMAT" = "json" ]; then
           cp "$TEXT_REPORT" "$JSON_REPORT"
         else
+          set +e
           rag-blast check \
             --old "$OLD_MANIFEST" \
             --new "$NEW_MANIFEST" \
             --format json \
             --fail-on none > "$JSON_REPORT"
+          json_status=$?
+          set -e
+
+          if [ "$json_status" -ne 0 ]; then
+            if [ "$status" -ne 0 ]; then
+              exit "$status"
+            fi
+            exit "$json_status"
+          fi
+        fi
+
+        if ! python - "$JSON_REPORT" >/dev/null 2>&1 <<'PY'
+        import json
+        import sys
+
+        with open(sys.argv[1], encoding="utf-8") as report_file:
+            json.load(report_file)
+        PY
+        then
+          if [ "$status" -ne 0 ]; then
+            exit "$status"
+          fi
+          echo "::error::rag-blast did not produce a valid JSON report."
+          exit 1
         fi
 
         python - "$JSON_REPORT" <<'PY' >> "$GITHUB_OUTPUT"

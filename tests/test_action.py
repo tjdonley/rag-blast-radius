@@ -41,6 +41,15 @@ def test_action_runs_installed_cli_with_validated_inputs() -> None:
     assert '>> "$GITHUB_STEP_SUMMARY"' in action
 
 
+def test_action_validates_json_report_before_parsing_outputs() -> None:
+    action = _read("action.yml")
+
+    assert "if ! python - \"$JSON_REPORT\" >/dev/null 2>&1 <<'PY'" in action
+    assert "json.load(report_file)" in action
+    assert 'if [ "$status" -ne 0 ]; then' in action
+    assert "rag-blast did not produce a valid JSON report" in action
+
+
 def test_action_docs_include_workflows_inputs_and_json_mode() -> None:
     action_docs = _read("docs/github-action.md")
     readme = _read("README.md")
