@@ -1,16 +1,40 @@
-# rag-blast-radius
+<p align="center">
+  <img src="docs/assets/rag-blast-logo.png" alt="rag-blast-radius logo" width="170">
+</p>
 
-Pre-deploy safety checks for RAG changes.
+<h1 align="center">rag-blast-radius</h1>
+
+<p align="center">
+  Pre-deploy safety checks for RAG changes.
+</p>
+
+<p align="center">
+  <img alt="Python 3.10+" src="https://img.shields.io/badge/python-3.10%2B-19c2ff">
+  <img alt="CLI rag-blast" src="https://img.shields.io/badge/CLI-rag--blast-536dff">
+  <img alt="Status early OSS" src="https://img.shields.io/badge/status-early%20OSS-72e6ae">
+</p>
 
 RAG systems are full of hidden state: document embeddings, vector indexes, semantic caches, chunking configs, retriever settings, rerankers, eval baselines, and prompt assumptions.
 
 Changing one component can silently invalidate the others. `rag-blast-radius` diffs RAG manifests and reports what becomes unsafe before you deploy.
+
+<p align="center">
+  <img src="docs/assets/blast-radius-map.svg" alt="A map of RAG configuration changes and affected production assets">
+</p>
 
 ## Why RAG Changes Are Risky
 
 RAG deployments often couple independently managed systems: an embedding model, a vector collection, chunking code, retriever settings, rerankers, semantic caches, and eval baselines. A small code or config change can make existing vectors incomparable, leave caches keyed to stale embeddings, or make retrieval evals no longer describe production behavior.
 
 `rag-blast-radius` makes those dependencies explicit by comparing two manifests and applying deterministic local rules. It does not call hosted services or inspect production data.
+
+## What It Helps Answer
+
+- Did the embedding model, dimensions, or provider change?
+- Did chunking change in a way that requires regenerated embeddings?
+- Did a vector collection, semantic cache namespace, or eval baseline drift?
+- Can a reviewer understand the RAG deployment risk without reading app code?
+- Can CI get a stable JSON summary of the manifest diff?
 
 ## Status
 
@@ -23,7 +47,7 @@ uv sync
 uv run rag-blast --help
 ```
 
-If you are not using `uv`, install the package in editable mode:
+Without `uv`:
 
 ```bash
 python -m pip install -e .
@@ -79,6 +103,18 @@ Explain a rule:
 ```bash
 rag-blast explain REEMBED_REQUIRED
 ```
+
+## How It Works
+
+<p align="center">
+  <img src="docs/assets/check-flow.svg" alt="RAG manifests flow through validation, diffing, reporting, and CI">
+</p>
+
+1. Write down the current and proposed RAG state as manifests.
+2. Validate both manifests with strict, typed schema checks.
+3. Diff the manifests into stable paths such as `embedding.model`.
+4. Apply deterministic rules that map changes to risk and rollout actions.
+5. Render the result as readable text or JSON for CI and pull requests.
 
 ## Example Check Output
 

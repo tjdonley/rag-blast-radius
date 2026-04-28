@@ -11,8 +11,9 @@ runner = CliRunner()
 def test_readme_has_public_release_sections() -> None:
     readme = (ROOT / "README.md").read_text(encoding="utf-8")
 
+    assert "rag-blast-radius" in readme
+
     for heading in (
-        "# rag-blast-radius",
         "## Why RAG Changes Are Risky",
         "## Quickstart",
         "## Example Check Output",
