@@ -126,7 +126,9 @@ def test_validate_manifest_rejects_string_reranker() -> None:
 
 def test_example_manifests_are_valid() -> None:
     examples_dir = Path(__file__).parent.parent / "examples"
-    manifest_paths = sorted(examples_dir.glob("**/*.json"))
+    manifest_paths = sorted(examples_dir.glob("*/old.json")) + sorted(
+        examples_dir.glob("*/new.json")
+    )
 
     assert manifest_paths
     for path in manifest_paths:

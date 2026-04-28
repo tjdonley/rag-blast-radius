@@ -1,0 +1,19 @@
+{
+  "risk": "HIGH",
+  "change_count": 3,
+  "categories": [
+    "chunk_overlap_changed",
+    "chunk_size_changed",
+    "vector_collection_changed"
+  ],
+  "finding_count": 5,
+  "findings": [
+    "REEMBED_REQUIRED",
+    "RETRIEVAL_BASELINE_STALE",
+    "CHUNKING_CHANGED",
+    "SHADOW_INDEX_RECOMMENDED",
+    "ROLLBACK_REQUIRES_OLD_INDEX"
+  ],
+  "unassessed_change_count": 0,
+  "unassessed_change_paths": []
+}
