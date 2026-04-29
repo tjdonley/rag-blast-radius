@@ -109,10 +109,20 @@ def test_action_docs_include_workflows_inputs_and_json_mode() -> None:
         assert "old_manifest:" in docs
         assert "new_manifest:" in docs
         assert "fail_on: high" in docs
+        assert "contents: read" in docs
 
     assert "format: json" in action_docs
     assert "risk" in action_docs
     assert "change_count" in action_docs
+    assert "Blocking Workflow" in action_docs
+    assert "Report-Only Workflow" in action_docs
+    assert "PR Comment Workflow" in action_docs
+    assert "pr_comment: true" in action_docs
+    assert "github_token: ${{ secrets.GITHUB_TOKEN }}" in action_docs
+    assert "pull-requests: write" in action_docs
+    assert "<!-- rag-blast-radius-report -->" in action_docs
+    assert "pull-requests: write" in readme
+    assert "pr_comment: true" in readme
     assert "docs/github-action.md" in readme
 
 

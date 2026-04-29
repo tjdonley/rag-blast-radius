@@ -182,6 +182,9 @@ name: RAG Blast Radius
 on:
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   rag-blast:
     runs-on: ubuntu-latest
@@ -197,9 +200,11 @@ jobs:
           fail_on: high
 ```
 
-The action prints the normal text report, writes a job summary, and exposes `risk`, `change_count`, `finding_count`, and `unassessed_change_count` outputs. Set `format: json` when workflow automation needs the raw JSON report in the logs.
+The action prints the normal text report, writes a Markdown job summary, emits a blocking annotation when `fail_on` trips, and exposes `risk`, `change_count`, `finding_count`, and `unassessed_change_count` outputs. Set `format: json` when workflow automation needs the raw JSON report in the logs.
 
-See `docs/github-action.md` for all action inputs, outputs, and a JSON workflow example.
+For report-only checks, use `fail_on: none`. For pull request comments, add `pr_comment: true`, pass `github_token: ${{ secrets.GITHUB_TOKEN }}`, and grant `pull-requests: write` in workflow permissions. The comment uses a stable marker and updates on reruns instead of duplicating.
+
+See `docs/github-action.md` for blocking, report-only, and PR comment workflows plus all action inputs, outputs, and permissions.
 
 ## Manifest Schema
 
