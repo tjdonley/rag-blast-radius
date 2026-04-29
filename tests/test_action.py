@@ -41,6 +41,25 @@ def test_action_runs_installed_cli_with_validated_inputs() -> None:
     assert '>> "$GITHUB_STEP_SUMMARY"' in action
 
 
+def test_action_uses_shared_markdown_renderer_for_step_summary() -> None:
+    action = _read("action.yml")
+
+    assert "from rag_blast.report import render_markdown_report" in action
+    assert "print(render_markdown_report(report))" in action
+    assert 'print("## RAG Blast Radius")' not in action
+    assert "### Recommended Rollout" not in action
+
+
+def test_action_emits_blocking_annotation_after_valid_report() -> None:
+    action = _read("action.yml")
+
+    assert 'if [ "$status" -ne 0 ]; then' in action
+    assert "::error title=RAG Blast Radius blocked::" in action
+    assert "risk={report['risk']}" in action
+    assert "fail_on={sys.argv[2]}" in action
+    assert "unassessed_changes={report['unassessed_change_count']}" in action
+
+
 def test_action_validates_json_report_before_parsing_outputs() -> None:
     action = _read("action.yml")
 

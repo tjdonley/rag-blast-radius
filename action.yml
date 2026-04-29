@@ -146,33 +146,29 @@ runs:
         import json
         import sys
 
+        from rag_blast.report import render_markdown_report
+
         with open(sys.argv[1], encoding="utf-8") as report_file:
             report = json.load(report_file)
 
-        print("## RAG Blast Radius")
-        print()
-        print(f"- Risk: `{report['risk']}`")
-        print(f"- Changes: `{report['change_count']}`")
-        print(f"- Findings: `{report['finding_count']}`")
-        print(f"- Unassessed changes: `{report['unassessed_change_count']}`")
-
-        if report["findings"]:
-            print()
-            print("### Findings")
-            for finding in report["findings"]:
-                print(f"- `{finding['severity']}` `{finding['rule_id']}`: {finding['summary']}")
-
-        if report["unassessed_change_paths"]:
-            print()
-            print("### Unassessed Changes")
-            for path in report["unassessed_change_paths"]:
-                print(f"- `{path}`")
-
-        if report["recommended_rollout"]:
-            print()
-            print("### Recommended Rollout")
-            for index, step in enumerate(report["recommended_rollout"], start=1):
-                print(f"{index}. {step}")
+        print(render_markdown_report(report))
         PY
+
+        if [ "$status" -ne 0 ]; then
+          python - "$JSON_REPORT" "$FAIL_ON" <<'PY'
+        import json
+        import sys
+
+        with open(sys.argv[1], encoding="utf-8") as report_file:
+            report = json.load(report_file)
+
+        print(
+            "::error title=RAG Blast Radius blocked::"
+            f"risk={report['risk']}; fail_on={sys.argv[2]}; "
+            f"findings={report['finding_count']}; "
+            f"unassessed_changes={report['unassessed_change_count']}"
+        )
+        PY
+        fi
 
         exit "$status"
