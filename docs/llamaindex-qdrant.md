@@ -20,7 +20,7 @@ rag-blast integrations llamaindex-qdrant --source src --output .rag-manifest.par
 
 ## Supported Patterns
 
-The scanner currently recognizes simple literal or constant-backed values in these patterns:
+The scanner currently recognizes simple literal or constant-backed values in these patterns when imports resolve to supported LlamaIndex + Qdrant modules:
 
 ```python
 from llama_index.core import Settings, VectorStoreIndex
@@ -46,6 +46,8 @@ It can extract:
 - `SentenceSplitter`, `TokenTextSplitter`, `SimpleNodeParser`, `.from_defaults`, and `Settings` chunk sizes and overlaps
 - Qdrant collection names and `enable_hybrid` flags
 - Retriever `similarity_top_k`, `top_k`, simple query mode, and simple reranker model patterns
+
+Similarly named local classes or functions are ignored unless their imports can be verified as supported integration patterns. Use explicit imports or module aliases; star imports are treated as unknown because the scanner does not execute modules to inspect exported names. For Azure OpenAI, deployment names are not treated as embedding model names; fill the underlying model manually when only `deployment_name` or `engine` is present.
 
 ## Partial Manifest Output
 
@@ -92,6 +94,8 @@ The scanner intentionally avoids false confidence:
 
 - It only scans Python source; it does not execute code.
 - Dynamic values without literal defaults are not resolved.
+- Bare class names are ignored unless imports identify them as supported LlamaIndex + Qdrant symbols.
+- Star imports are ignored because exported names cannot be verified without importing code.
 - If multiple values are found for a field, it uses the first deterministic source-order value and prints a warning.
 - Semantic caches and retrieval evals are not inferred.
 - The output is a partial manifest draft, not proof that the application is safe to deploy.
