@@ -47,6 +47,7 @@ SUPPORTED_INDEX_SUFFIXES = (
     ".core.VectorStoreIndex",
     ".core.indices.vector_store.base.VectorStoreIndex",
 )
+SUPPORTED_INDEX_FACTORY_METHODS = ("from_documents", "from_vector_store")
 SUPPORTED_RETRIEVER_QUERY_ENGINE_SUFFIXES = (
     ".core.query_engine.RetrieverQueryEngine",
     ".core.query_engine.retriever_query_engine.RetrieverQueryEngine",
@@ -981,9 +982,12 @@ def _is_llamaindex_index_call(call_name: str) -> bool:
     if not call_name.startswith("llama_index."):
         return False
 
-    index_call_name = call_name.removesuffix(".from_vector_store")
-    if call_name not in {index_call_name, f"{index_call_name}.from_vector_store"}:
-        return False
+    index_call_name = call_name
+    for factory_method in SUPPORTED_INDEX_FACTORY_METHODS:
+        factory_call_name = call_name.removesuffix(f".{factory_method}")
+        if factory_call_name != call_name:
+            index_call_name = factory_call_name
+            break
     return any(index_call_name == f"llama_index{suffix}" for suffix in SUPPORTED_INDEX_SUFFIXES)
 
 

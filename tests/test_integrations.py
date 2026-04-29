@@ -741,6 +741,23 @@ retriever = index.as_retriever(similarity_top_k=8)
     assert scan.manifest["retriever"]["top_k"] == 8
 
 
+def test_llamaindex_qdrant_scan_records_as_retriever_from_document_index(tmp_path) -> None:
+    source = tmp_path / "rag_app.py"
+    source.write_text(
+        """
+from llama_index.core import VectorStoreIndex
+
+index = VectorStoreIndex.from_documents(documents)
+retriever = index.as_retriever(similarity_top_k=8)
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    scan = scan_llamaindex_qdrant(source)
+
+    assert scan.manifest["retriever"]["top_k"] == 8
+
+
 def test_llamaindex_qdrant_scan_rejects_similarly_named_index_classes(tmp_path) -> None:
     source = tmp_path / "rag_app.py"
     source.write_text(
