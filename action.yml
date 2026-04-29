@@ -23,6 +23,14 @@ inputs:
     description: Python version used to install and run rag-blast.
     required: false
     default: "3.12"
+  pr_comment:
+    description: Post or update a pull request comment with the report.
+    required: false
+    default: "false"
+  github_token:
+    description: GitHub token used when pr_comment is true.
+    required: false
+    default: ""
 
 outputs:
   risk:
@@ -60,11 +68,14 @@ runs:
         NEW_MANIFEST: ${{ inputs.new_manifest }}
         FAIL_ON: ${{ inputs.fail_on }}
         REPORT_FORMAT: ${{ inputs.format }}
+        PR_COMMENT: ${{ inputs.pr_comment }}
+        GH_TOKEN: ${{ inputs.github_token }}
       run: |
         set -uo pipefail
 
         REPORT_FORMAT=$(printf '%s' "$REPORT_FORMAT" | tr '[:upper:]' '[:lower:]')
         FAIL_ON=$(printf '%s' "$FAIL_ON" | tr '[:upper:]' '[:lower:]')
+        PR_COMMENT=$(printf '%s' "$PR_COMMENT" | tr '[:upper:]' '[:lower:]')
 
         case "$REPORT_FORMAT" in
           text|json) ;;
@@ -78,6 +89,14 @@ runs:
           none|low|medium|high) ;;
           *)
             echo "::error::Unsupported fail_on threshold: $FAIL_ON. Use none, low, medium, or high."
+            exit 1
+            ;;
+        esac
+
+        case "$PR_COMMENT" in
+          true|false) ;;
+          *)
+            echo "::error::Unsupported pr_comment value: $PR_COMMENT. Use true or false."
             exit 1
             ;;
         esac
@@ -153,6 +172,92 @@ runs:
 
         print(render_markdown_report(report))
         PY
+
+        if [ "$PR_COMMENT" = "true" ]; then
+          if [ -z "${GH_TOKEN:-}" ]; then
+            echo "::notice::pr_comment requested but github_token was not provided; skipping PR comment."
+          elif [ -z "${GITHUB_EVENT_PATH:-}" ] || [ ! -f "$GITHUB_EVENT_PATH" ]; then
+            echo "::notice::pr_comment requested but no GitHub event payload was available; skipping PR comment."
+          else
+            PR_NUMBER=$(python - "$GITHUB_EVENT_PATH" <<'PY'
+        import json
+        import sys
+
+        with open(sys.argv[1], encoding="utf-8") as event_file:
+            event = json.load(event_file)
+
+        pull_request = event.get("pull_request") or {}
+        print(pull_request.get("number", ""))
+        PY
+        )
+
+            if [ -z "$PR_NUMBER" ]; then
+              echo "::notice::pr_comment requested outside a pull_request event; skipping PR comment."
+            elif [ -z "${GITHUB_REPOSITORY:-}" ]; then
+              echo "::notice::pr_comment requested but GITHUB_REPOSITORY was unavailable; skipping PR comment."
+            else
+              COMMENT_BODY="$RUNNER_TEMP/rag-blast-pr-comment.md"
+              COMMENT_PAYLOAD="$RUNNER_TEMP/rag-blast-pr-comment.json"
+              COMMENTS_JSONL="$RUNNER_TEMP/rag-blast-comments.jsonl"
+
+              python - "$JSON_REPORT" "$COMMENT_BODY" <<'PY'
+        import json
+        import sys
+
+        from rag_blast.report import render_markdown_report
+
+        with open(sys.argv[1], encoding="utf-8") as report_file:
+            report = json.load(report_file)
+
+        with open(sys.argv[2], "w", encoding="utf-8") as comment_file:
+            comment_file.write("<!-- rag-blast-radius-report -->\n\n")
+            comment_file.write(render_markdown_report(report))
+            comment_file.write("\n")
+        PY
+
+              python - "$COMMENT_BODY" "$COMMENT_PAYLOAD" <<'PY'
+        import json
+        import sys
+
+        with open(sys.argv[1], encoding="utf-8") as body_file:
+            body = body_file.read()
+
+        with open(sys.argv[2], "w", encoding="utf-8") as payload_file:
+            json.dump({"body": body}, payload_file)
+        PY
+
+              if ! gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate --jq '.[] | {id, body} | @json' > "$COMMENTS_JSONL"; then
+                echo "::warning::Unable to fetch existing PR comments; skipping PR comment."
+              else
+                COMMENT_ID=$(python - "$COMMENTS_JSONL" <<'PY'
+        import json
+        import sys
+
+        marker = "<!-- rag-blast-radius-report -->"
+        with open(sys.argv[1], encoding="utf-8") as comments_file:
+            for line in comments_file:
+                if not line.strip():
+                    continue
+                comment = json.loads(line)
+                if marker in comment.get("body", ""):
+                    print(comment["id"])
+                    break
+        PY
+        )
+
+                if [ -n "$COMMENT_ID" ]; then
+                  if ! gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" --input "$COMMENT_PAYLOAD" >/dev/null; then
+                    echo "::warning::Unable to update existing PR comment."
+                  fi
+                else
+                  if ! gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --input "$COMMENT_PAYLOAD" >/dev/null; then
+                    echo "::warning::Unable to create PR comment."
+                  fi
+                fi
+              fi
+            fi
+          fi
+        fi
 
         if [ "$status" -ne 0 ]; then
           python - "$JSON_REPORT" "$FAIL_ON" <<'PY'
