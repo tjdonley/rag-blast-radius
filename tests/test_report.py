@@ -129,12 +129,12 @@ def test_render_markdown_report_lists_github_summary() -> None:
     markdown = render_markdown_report(report)
 
     assert "## RAG Blast Radius" in markdown
-    assert "| Risk | `HIGH` |" in markdown
-    assert "| Changes | `1` |" in markdown
+    assert "| Risk | <code>HIGH</code> |" in markdown
+    assert "| Changes | <code>1</code> |" in markdown
     assert "### Detected Changes" in markdown
-    assert "`embedding.model`" in markdown
+    assert "<code>embedding.model</code>" in markdown
     assert "### Findings" in markdown
-    assert "`REEMBED_REQUIRED`" in markdown
+    assert "<code>REEMBED_REQUIRED</code>" in markdown
     assert "### Recommended Rollout" in markdown
     assert "Risk is based on deterministic local rules." in markdown
 
@@ -142,8 +142,8 @@ def test_render_markdown_report_lists_github_summary() -> None:
 def test_render_markdown_report_handles_empty_report() -> None:
     markdown = render_markdown_report(build_report(ManifestDiff(changes=())))
 
-    assert "| Risk | `NONE` |" in markdown
-    assert "| Changes | `0` |" in markdown
+    assert "| Risk | <code>NONE</code> |" in markdown
+    assert "| Changes | <code>0</code> |" in markdown
     assert "### Detected Changes\n- none" in markdown
     assert "### Findings\n- none" in markdown
 
@@ -153,7 +153,7 @@ def test_render_markdown_report_escapes_table_values() -> None:
         ManifestDiff(
             changes=(
                 ManifestChange(
-                    path="app",
+                    path="app`name",
                     old="<old|app>",
                     new="new\napp",
                     category="manifest_field_changed",
@@ -165,6 +165,8 @@ def test_render_markdown_report_escapes_table_values() -> None:
 
     markdown = render_markdown_report(report)
 
+    assert "<code>app&#96;name</code>" in markdown
+    assert "\\`" not in markdown
     assert "Manifest \\| field changed" in markdown
     assert "&lt;old\\|app&gt;" in markdown
     assert "new<br>app" in markdown
