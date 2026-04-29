@@ -4,6 +4,7 @@ from rag_blast.diff import ManifestChange, ManifestDiff
 from rag_blast.report import (
     build_report,
     normalize_fail_on,
+    render_html_report,
     render_json_report,
     render_markdown_report,
     render_text_report,
@@ -171,6 +172,73 @@ def test_render_markdown_report_escapes_table_values() -> None:
     assert "&lt;old\\|app&gt;" in markdown
     assert "new<br>app" in markdown
     assert "### Unassessed Changes" in markdown
+
+
+def test_render_html_report_lists_summary_sections() -> None:
+    report = build_report(
+        ManifestDiff(
+            changes=(
+                ManifestChange(
+                    path="embedding.model",
+                    old="text-embedding-ada-002",
+                    new="new-model",
+                    category="embedding_model_changed",
+                    summary="Embedding model changed",
+                ),
+            )
+        )
+    )
+
+    rendered = render_html_report(report)
+
+    assert rendered.startswith("<!doctype html>")
+    assert "<title>RAG Blast Radius Report</title>" in rendered
+    assert "<h1>RAG Blast Radius Report</h1>" in rendered
+    assert '<span class="risk-badge">HIGH</span>' in rendered
+    assert '<section class="section" aria-labelledby="changes-heading">' in rendered
+    assert '<h2 id="changes-heading">Detected Changes</h2>' in rendered
+    assert "<code>embedding.model</code>" in rendered
+    assert "<code>REEMBED_REQUIRED</code>" in rendered
+    assert '<ol class="rollout">' in rendered
+    assert "<summary>Show report payload</summary>" in rendered
+    assert 'src="' not in rendered
+    assert "<script" not in rendered
+
+
+def test_render_html_report_handles_empty_report() -> None:
+    rendered = render_html_report(build_report(ManifestDiff(changes=())))
+
+    assert '<span class="risk-badge">NONE</span>' in rendered
+    assert "No manifest changes detected." in rendered
+    assert "No invalidation rules triggered." in rendered
+    assert "No unassessed changes." in rendered
+    assert "No rollout steps required." in rendered
+
+
+def test_render_html_report_escapes_values_and_raw_json() -> None:
+    report = build_report(
+        ManifestDiff(
+            changes=(
+                ManifestChange(
+                    path="app<script>",
+                    old="<old&app>",
+                    new='new "app"',
+                    category="manifest_field_changed",
+                    summary="Manifest <field> changed",
+                ),
+            )
+        )
+    )
+
+    rendered = render_html_report(report)
+
+    assert "app&lt;script&gt;" in rendered
+    assert "&lt;old&amp;app&gt;" in rendered
+    assert "new &quot;app&quot;" in rendered
+    assert "Manifest &lt;field&gt; changed" in rendered
+    assert "<script>" not in rendered
+    assert '"path": "app&lt;script&gt;"' in rendered
+    assert "Review unassessed manifest changes before deployment." in rendered
 
 
 def test_normalize_fail_on_accepts_known_values() -> None:
