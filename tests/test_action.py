@@ -9,11 +9,20 @@ def test_action_metadata_declares_pr_gate_inputs_and_outputs() -> None:
 
     assert "name: RAG Blast Radius" in action
     assert "description: Pre-deploy safety checks for RAG manifest changes" in action
-    for input_name in ("old_manifest", "new_manifest", "fail_on", "format", "python_version"):
+    for input_name in (
+        "old_manifest",
+        "new_manifest",
+        "fail_on",
+        "format",
+        "python_version",
+        "pr_comment",
+        "github_token",
+    ):
         assert f"  {input_name}:" in action
     assert "default: high" in action
     assert "default: text" in action
     assert 'default: "3.12"' in action
+    assert 'default: "false"' in action
 
     for output_name in (
         "risk",
@@ -37,6 +46,7 @@ def test_action_runs_installed_cli_with_validated_inputs() -> None:
     assert '--fail-on "$FAIL_ON"' in action
     assert "text|json" in action
     assert "none|low|medium|high" in action
+    assert "true|false" in action
     assert '>> "$GITHUB_OUTPUT"' in action
     assert '>> "$GITHUB_STEP_SUMMARY"' in action
 
@@ -58,6 +68,27 @@ def test_action_emits_blocking_annotation_after_valid_report() -> None:
     assert "risk={report['risk']}" in action
     assert "fail_on={sys.argv[2]}" in action
     assert "unassessed_changes={report['unassessed_change_count']}" in action
+
+
+def test_action_supports_optional_pull_request_comment_upsert() -> None:
+    action = _read("action.yml")
+
+    assert "PR_COMMENT: ${{ inputs.pr_comment }}" in action
+    assert "GH_TOKEN: ${{ inputs.github_token }}" in action
+    assert "<!-- rag-blast-radius-report -->" in action
+    assert "render_markdown_report(report)" in action
+    assert 'gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments"' in action
+    assert 'gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID"' in action
+    assert 'gh api -X POST "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments"' in action
+
+
+def test_action_skips_pr_comment_without_pull_request_context() -> None:
+    action = _read("action.yml")
+
+    assert "pr_comment requested but github_token was not provided; skipping PR comment" in action
+    assert "pr_comment requested outside a pull_request event; skipping PR comment" in action
+    assert 'pull_request = event.get("pull_request") or {}' in action
+    assert 'print(pull_request.get("number", ""))' in action
 
 
 def test_action_validates_json_report_before_parsing_outputs() -> None:
