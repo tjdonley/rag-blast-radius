@@ -425,6 +425,58 @@ except RuntimeError as OpenAIEmbedding:
     assert any("No supported LlamaIndex + Qdrant" in warning for warning in scan.warnings)
 
 
+def test_llamaindex_qdrant_scan_does_not_leak_exception_target_shadowing(tmp_path) -> None:
+    source = tmp_path / "rag_app.py"
+    source.write_text(
+        """
+from llama_index.embeddings.openai import OpenAIEmbedding
+
+try:
+    raise RuntimeError
+except RuntimeError as OpenAIEmbedding:
+    pass
+
+OpenAIEmbedding(model="text-embedding-3-small")
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    scan = scan_llamaindex_qdrant(source)
+
+    assert scan.manifest["embedding"] == {
+        "provider": "openai",
+        "model": "text-embedding-3-small",
+        "dimensions": 1536,
+    }
+
+
+def test_llamaindex_qdrant_scan_does_not_predeclare_function_exception_targets(
+    tmp_path,
+) -> None:
+    source = tmp_path / "rag_app.py"
+    source.write_text(
+        """
+from llama_index.embeddings.openai import OpenAIEmbedding
+
+def configure():
+    OpenAIEmbedding(model="text-embedding-3-small")
+    try:
+        raise RuntimeError
+    except RuntimeError as OpenAIEmbedding:
+        pass
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    scan = scan_llamaindex_qdrant(source)
+
+    assert scan.manifest["embedding"] == {
+        "provider": "openai",
+        "model": "text-embedding-3-small",
+        "dimensions": 1536,
+    }
+
+
 def test_llamaindex_qdrant_scan_respects_match_capture_shadowing(tmp_path) -> None:
     source = tmp_path / "rag_app.py"
     source.write_text(
@@ -442,6 +494,54 @@ match item:
 
     assert "embedding" not in scan.manifest
     assert any("No supported LlamaIndex + Qdrant" in warning for warning in scan.warnings)
+
+
+def test_llamaindex_qdrant_scan_isolates_match_capture_shadowing_per_case(tmp_path) -> None:
+    source = tmp_path / "rag_app.py"
+    source.write_text(
+        """
+from llama_index.embeddings.openai import OpenAIEmbedding
+
+match item:
+    case OpenAIEmbedding:
+        pass
+    case _:
+        OpenAIEmbedding(model="text-embedding-3-small")
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    scan = scan_llamaindex_qdrant(source)
+
+    assert scan.manifest["embedding"] == {
+        "provider": "openai",
+        "model": "text-embedding-3-small",
+        "dimensions": 1536,
+    }
+
+
+def test_llamaindex_qdrant_scan_does_not_leak_match_capture_shadowing(tmp_path) -> None:
+    source = tmp_path / "rag_app.py"
+    source.write_text(
+        """
+from llama_index.embeddings.openai import OpenAIEmbedding
+
+match item:
+    case OpenAIEmbedding:
+        pass
+
+OpenAIEmbedding(model="text-embedding-3-small")
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    scan = scan_llamaindex_qdrant(source)
+
+    assert scan.manifest["embedding"] == {
+        "provider": "openai",
+        "model": "text-embedding-3-small",
+        "dimensions": 1536,
+    }
 
 
 def test_llamaindex_qdrant_scan_respects_comprehension_walrus_binding(tmp_path) -> None:
@@ -516,7 +616,7 @@ factory = lambda: (OpenAIEmbedding(model="local"), (OpenAIEmbedding := object))
     assert any("No supported LlamaIndex + Qdrant" in warning for warning in scan.warnings)
 
 
-def test_llamaindex_qdrant_scan_predeclares_function_match_bindings(tmp_path) -> None:
+def test_llamaindex_qdrant_scan_does_not_predeclare_function_match_bindings(tmp_path) -> None:
     source = tmp_path / "rag_app.py"
     source.write_text(
         """
@@ -533,8 +633,11 @@ def configure(item):
 
     scan = scan_llamaindex_qdrant(source)
 
-    assert "embedding" not in scan.manifest
-    assert any("No supported LlamaIndex + Qdrant" in warning for warning in scan.warnings)
+    assert scan.manifest["embedding"] == {
+        "provider": "openai",
+        "model": "text-embedding-3-small",
+        "dimensions": 1536,
+    }
 
 
 def test_llamaindex_qdrant_scan_respects_global_declarations(tmp_path) -> None:

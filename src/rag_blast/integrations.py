@@ -208,10 +208,16 @@ class _LlamaIndexQdrantVisitor(ast.NodeVisitor):
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if node.type is not None:
             self.visit(node.type)
+        restore_binding = None
         if node.name is not None:
+            restore_binding = self._temporary_name_binding(node.name)
             self._record_name_binding(node.name)
-        for statement in node.body:
-            self.visit(statement)
+        try:
+            for statement in node.body:
+                self.visit(statement)
+        finally:
+            if restore_binding is not None:
+                restore_binding()
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
         self.visit(node.value)
@@ -225,19 +231,19 @@ class _LlamaIndexQdrantVisitor(ast.NodeVisitor):
 
     def visit_Match(self, node: ast.Match) -> None:
         self.visit(node.subject)
-        bound_names: set[str] = set()
         for case in node.cases:
             case_bound_names = _pattern_names(case.pattern)
-            bound_names.update(case_bound_names)
+            restore_bindings = [self._temporary_name_binding(name) for name in case_bound_names]
             for name in case_bound_names:
                 self._record_name_binding(name)
-            if case.guard is not None:
-                self.visit(case.guard)
-            for statement in case.body:
-                self.visit(statement)
-
-        for name in bound_names:
-            self._record_name_binding(name)
+            try:
+                if case.guard is not None:
+                    self.visit(case.guard)
+                for statement in case.body:
+                    self.visit(statement)
+            finally:
+                for restore_binding in reversed(restore_bindings):
+                    restore_binding()
 
     def visit_Assign(self, node: ast.Assign) -> None:
         for target in node.targets:
@@ -408,6 +414,32 @@ class _LlamaIndexQdrantVisitor(ast.NodeVisitor):
     def _record_star_import_binding(self) -> None:
         for name in tuple(self.import_alias_scopes[-1]):
             self._record_name_binding(name)
+
+    def _temporary_name_binding(self, name: str):
+        scope_index = len(self.scopes) - 1
+        scope_had_name = name in self.scopes[scope_index]
+        previous_scope_value = self.scopes[scope_index].get(name)
+        import_had_name = name in self.import_alias_scopes[scope_index]
+        previous_import_value = self.import_alias_scopes[scope_index].get(name)
+        index_had_name = name in self.index_name_scopes[scope_index]
+
+        def restore() -> None:
+            if scope_had_name:
+                self.scopes[scope_index][name] = previous_scope_value
+            else:
+                self.scopes[scope_index].pop(name, None)
+
+            if import_had_name:
+                self.import_alias_scopes[scope_index][name] = previous_import_value
+            else:
+                self.import_alias_scopes[scope_index].pop(name, None)
+
+            if index_had_name:
+                self.index_name_scopes[scope_index].add(name)
+            else:
+                self.index_name_scopes[scope_index].discard(name)
+
+        return restore
 
     def _record_index_assignments(
         self, targets: tuple[ast.expr, ...] | list[ast.expr], value_node: ast.expr
@@ -800,8 +832,6 @@ class _FunctionLocalBindingCollector(ast.NodeVisitor):
         self.visit_With(node)
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
-        if node.name is not None:
-            self._add_name(node.name)
         for statement in node.body:
             self.visit(statement)
 
@@ -816,7 +846,6 @@ class _FunctionLocalBindingCollector(ast.NodeVisitor):
     def visit_Match(self, node: ast.Match) -> None:
         self.visit(node.subject)
         for case in node.cases:
-            self._add_names(_pattern_names(case.pattern))
             if case.guard is not None:
                 self.visit(case.guard)
             for statement in case.body:
