@@ -537,6 +537,53 @@ def configure(item):
     assert any("No supported LlamaIndex + Qdrant" in warning for warning in scan.warnings)
 
 
+def test_llamaindex_qdrant_scan_respects_global_declarations(tmp_path) -> None:
+    source = tmp_path / "rag_app.py"
+    source.write_text(
+        """
+from llama_index.embeddings.openai import OpenAIEmbedding
+
+def configure():
+    global OpenAIEmbedding
+    OpenAIEmbedding(model="text-embedding-3-small")
+    OpenAIEmbedding = object
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    scan = scan_llamaindex_qdrant(source)
+
+    assert scan.manifest["embedding"] == {
+        "provider": "openai",
+        "model": "text-embedding-3-small",
+        "dimensions": 1536,
+    }
+
+
+def test_llamaindex_qdrant_scan_respects_nonlocal_declarations(tmp_path) -> None:
+    source = tmp_path / "rag_app.py"
+    source.write_text(
+        """
+def outer():
+    from llama_index.embeddings.openai import OpenAIEmbedding
+
+    def configure():
+        nonlocal OpenAIEmbedding
+        OpenAIEmbedding(model="text-embedding-3-small")
+        OpenAIEmbedding = object
+""".lstrip(),
+        encoding="utf-8",
+    )
+
+    scan = scan_llamaindex_qdrant(source)
+
+    assert scan.manifest["embedding"] == {
+        "provider": "openai",
+        "model": "text-embedding-3-small",
+        "dimensions": 1536,
+    }
+
+
 def test_llamaindex_qdrant_scan_only_records_tracked_index_as_retriever(tmp_path) -> None:
     source = tmp_path / "rag_app.py"
     source.write_text(

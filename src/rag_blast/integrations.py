@@ -728,41 +728,59 @@ def _is_skipped(path: Path, source: Path) -> bool:
 class _FunctionLocalBindingCollector(ast.NodeVisitor):
     def __init__(self) -> None:
         self.names: set[str] = set()
+        self.outer_scope_names: set[str] = set()
+
+    def _add_name(self, name: str) -> None:
+        if name not in self.outer_scope_names:
+            self.names.add(name)
+
+    def _add_names(self, names: set[str]) -> None:
+        self.names.update(names - self.outer_scope_names)
+
+    def _record_outer_scope_names(self, names: list[str]) -> None:
+        self.outer_scope_names.update(names)
+        self.names.difference_update(names)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
-        self.names.add(node.name)
+        self._add_name(node.name)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
-        self.names.add(node.name)
+        self._add_name(node.name)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
-        self.names.add(node.name)
+        self._add_name(node.name)
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
-            self.names.add(alias.asname or alias.name.split(".", 1)[0])
+            self._add_name(alias.asname or alias.name.split(".", 1)[0])
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
         for alias in node.names:
             if alias.name != "*":
-                self.names.add(alias.asname or alias.name)
+                self._add_name(alias.asname or alias.name)
+
+    def visit_Global(self, node: ast.Global) -> None:
+        self._record_outer_scope_names(node.names)
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        self._record_outer_scope_names(node.names)
 
     def visit_Assign(self, node: ast.Assign) -> None:
         for target in node.targets:
-            self.names.update(_target_names(target))
+            self._add_names(_target_names(target))
         self.visit(node.value)
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
-        self.names.update(_target_names(node.target))
+        self._add_names(_target_names(node.target))
         if node.value is not None:
             self.visit(node.value)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
-        self.names.update(_target_names(node.target))
+        self._add_names(_target_names(node.target))
         self.visit(node.value)
 
     def visit_For(self, node: ast.For) -> None:
-        self.names.update(_target_names(node.target))
+        self._add_names(_target_names(node.target))
         self.visit(node.iter)
         for statement in (*node.body, *node.orelse):
             self.visit(statement)
@@ -774,7 +792,7 @@ class _FunctionLocalBindingCollector(ast.NodeVisitor):
         for item in node.items:
             self.visit(item.context_expr)
             if item.optional_vars is not None:
-                self.names.update(_target_names(item.optional_vars))
+                self._add_names(_target_names(item.optional_vars))
         for statement in node.body:
             self.visit(statement)
 
@@ -783,22 +801,22 @@ class _FunctionLocalBindingCollector(ast.NodeVisitor):
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if node.name is not None:
-            self.names.add(node.name)
+            self._add_name(node.name)
         for statement in node.body:
             self.visit(statement)
 
     def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
-        self.names.update(_target_names(node.target))
+        self._add_names(_target_names(node.target))
         self.visit(node.value)
 
     def visit_Delete(self, node: ast.Delete) -> None:
         for target in node.targets:
-            self.names.update(_target_names(target))
+            self._add_names(_target_names(target))
 
     def visit_Match(self, node: ast.Match) -> None:
         self.visit(node.subject)
         for case in node.cases:
-            self.names.update(_pattern_names(case.pattern))
+            self._add_names(_pattern_names(case.pattern))
             if case.guard is not None:
                 self.visit(case.guard)
             for statement in case.body:
