@@ -5,6 +5,7 @@ from rag_blast.report import (
     build_report,
     normalize_fail_on,
     render_json_report,
+    render_markdown_report,
     render_text_report,
     should_fail_report,
 )
@@ -108,6 +109,68 @@ def test_render_json_report_is_parseable() -> None:
     report = build_report(ManifestDiff(changes=()))
 
     assert json.loads(render_json_report(report))["risk"] == "NONE"
+
+
+def test_render_markdown_report_lists_github_summary() -> None:
+    report = build_report(
+        ManifestDiff(
+            changes=(
+                ManifestChange(
+                    path="embedding.model",
+                    old="text-embedding-ada-002",
+                    new="new-model",
+                    category="embedding_model_changed",
+                    summary="Embedding model changed",
+                ),
+            )
+        )
+    )
+
+    markdown = render_markdown_report(report)
+
+    assert "## RAG Blast Radius" in markdown
+    assert "| Risk | <code>HIGH</code> |" in markdown
+    assert "| Changes | <code>1</code> |" in markdown
+    assert "### Detected Changes" in markdown
+    assert "<code>embedding.model</code>" in markdown
+    assert "### Findings" in markdown
+    assert "<code>REEMBED_REQUIRED</code>" in markdown
+    assert "### Recommended Rollout" in markdown
+    assert "Risk is based on deterministic local rules." in markdown
+
+
+def test_render_markdown_report_handles_empty_report() -> None:
+    markdown = render_markdown_report(build_report(ManifestDiff(changes=())))
+
+    assert "| Risk | <code>NONE</code> |" in markdown
+    assert "| Changes | <code>0</code> |" in markdown
+    assert "### Detected Changes\n- none" in markdown
+    assert "### Findings\n- none" in markdown
+
+
+def test_render_markdown_report_escapes_table_values() -> None:
+    report = build_report(
+        ManifestDiff(
+            changes=(
+                ManifestChange(
+                    path="app`name",
+                    old="<old|app>",
+                    new="new\napp",
+                    category="manifest_field_changed",
+                    summary="Manifest | field changed",
+                ),
+            )
+        )
+    )
+
+    markdown = render_markdown_report(report)
+
+    assert "<code>app&#96;name</code>" in markdown
+    assert "\\`" not in markdown
+    assert "Manifest \\| field changed" in markdown
+    assert "&lt;old\\|app&gt;" in markdown
+    assert "new<br>app" in markdown
+    assert "### Unassessed Changes" in markdown
 
 
 def test_normalize_fail_on_accepts_known_values() -> None:

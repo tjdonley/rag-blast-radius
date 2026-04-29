@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import html
 import json
 from typing import Any
 
@@ -89,6 +90,78 @@ def render_json_report(report: dict[str, Any]) -> str:
     return json.dumps(report, indent=2)
 
 
+def render_markdown_report(report: dict[str, Any]) -> str:
+    """Render a GitHub-friendly Markdown report."""
+    lines = [
+        "## RAG Blast Radius",
+        "",
+        "| Metric | Value |",
+        "| --- | --- |",
+        f"| Risk | {_markdown_code(report['risk'])} |",
+        f"| Changes | {_markdown_code(report['change_count'])} |",
+        f"| Findings | {_markdown_code(report['finding_count'])} |",
+        f"| Unassessed changes | {_markdown_code(report['unassessed_change_count'])} |",
+        "",
+        "### Detected Changes",
+    ]
+
+    changes = report["changes"]
+    if not changes:
+        lines.append("- none")
+    else:
+        lines.extend(
+            [
+                "| Path | Category | Summary | Old | New |",
+                "| --- | --- | --- | --- | --- |",
+            ]
+        )
+        for change in changes:
+            lines.append(
+                "| "
+                f"{_markdown_code(change['path'])} | "
+                f"{_markdown_code(change['category'])} | "
+                f"{_markdown_table_cell(change['summary'])} | "
+                f"{_markdown_table_cell(change['old'])} | "
+                f"{_markdown_table_cell(change['new'])} |"
+            )
+
+    lines.extend(["", "### Findings"])
+    findings = report["findings"]
+    if not findings:
+        lines.append("- none")
+    else:
+        lines.extend(
+            [
+                "| Severity | Rule | Summary | Change Paths |",
+                "| --- | --- | --- | --- |",
+            ]
+        )
+        for finding in findings:
+            change_paths = ", ".join(_markdown_code(path) for path in finding["change_paths"])
+            lines.append(
+                "| "
+                f"{_markdown_code(finding['severity'])} | "
+                f"{_markdown_code(finding['rule_id'])} | "
+                f"{_markdown_table_cell(finding['summary'])} | "
+                f"{change_paths or 'none'} |"
+            )
+
+    unassessed_change_paths = report["unassessed_change_paths"]
+    if unassessed_change_paths:
+        lines.extend(["", "### Unassessed Changes"])
+        for path in unassessed_change_paths:
+            lines.append(f"- {_markdown_code(path)}")
+
+    rollout_steps = report["recommended_rollout"]
+    if rollout_steps:
+        lines.extend(["", "### Recommended Rollout"])
+        for index, step in enumerate(rollout_steps, start=1):
+            lines.append(f"{index}. {_markdown_text(step)}")
+
+    lines.extend(["", str(report["note"])])
+    return "\n".join(lines)
+
+
 def normalize_fail_on(value: str) -> str | None:
     """Normalize a fail-on threshold, or return None when invalid."""
     normalized = value.lower()
@@ -148,3 +221,27 @@ def _unassessed_change_paths(
     return tuple(
         change.path for change in manifest_diff.changes if change.path not in assessed_paths
     )
+
+
+def _markdown_table_cell(value: Any) -> str:
+    return _markdown_text(value).replace("\n", "<br>").replace("|", r"\|")
+
+
+def _markdown_code(value: Any) -> str:
+    text = _markdown_raw_text(value)
+    escaped = html.escape(text, quote=False)
+    escaped = escaped.replace("\n", "<br>").replace("|", "&#124;").replace("`", "&#96;")
+    return f"<code>{escaped}</code>"
+
+
+def _markdown_text(value: Any) -> str:
+    text = _markdown_raw_text(value)
+    return html.escape(text.replace("`", r"\`"), quote=False)
+
+
+def _markdown_raw_text(value: Any) -> str:
+    if isinstance(value, (dict, list, tuple)):
+        return json.dumps(value, sort_keys=True)
+    if isinstance(value, bool) or value is None:
+        return json.dumps(value)
+    return str(value)
