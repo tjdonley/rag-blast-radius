@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import json
+import sys
 from pathlib import Path
+from typing import Any
 
 import typer
 from rich.console import Console
@@ -12,15 +15,24 @@ from rag_blast.integrations import (
     render_partial_manifest,
     scan_llamaindex_qdrant,
 )
-from rag_blast.manifest import ManifestLoadError, load_manifest, write_starter_manifest
+from rag_blast.manifest import (
+    ManifestLoadError,
+    load_manifest,
+    manifest_json_schema,
+    write_starter_manifest,
+)
 from rag_blast.report import (
+    REPORT_FORMATS,
+    ReportLoadError,
     build_report,
+    load_report,
     normalize_fail_on,
-    render_json_report,
-    render_text_report,
+    normalize_format,
+    parse_report,
+    render_report,
     should_fail_report,
 )
-from rag_blast.rules import get_rule
+from rag_blast.rules import get_rule, rules_payload
 
 integrations_app = typer.Typer(
     help="Generate manifest drafts from known RAG framework patterns.",
@@ -35,10 +47,38 @@ console = Console()
 err_console = Console(stderr=True)
 
 
+FORMAT_HELP = f"Report format: {', '.join(REPORT_FORMATS)}."
+
+
 def _version_callback(value: bool) -> None:
     if value:
         console.print(f"rag-blast {__version__}")
         raise typer.Exit()
+
+
+def _resolve_format(value: str) -> str:
+    resolved = normalize_format(value)
+    if resolved is None:
+        console.print(f"[red]Unsupported format.[/red] Use one of: {', '.join(REPORT_FORMATS)}.")
+        raise typer.Exit(1)
+    return resolved
+
+
+def _emit_report(report: dict[str, Any], output_format: str, output: Path | None) -> None:
+    """Write a rendered report to a file, or print it to stdout."""
+    rendered = render_report(report, output_format).rstrip("\n")
+
+    if output is not None:
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(rendered + "\n", encoding="utf-8")
+        console.print(f"[green]Wrote report:[/green] {output}")
+        return
+
+    if output_format == "text":
+        console.print(rendered, markup=False)
+        return
+
+    typer.echo(rendered)
 
 
 @app.callback()
@@ -94,7 +134,13 @@ def check_command(
     output_format: str = typer.Option(
         "text",
         "--format",
-        help="Report format: text or json.",
+        help=FORMAT_HELP,
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Write the report to a file instead of stdout. Existing files are overwritten.",
     ),
     fail_on: str = typer.Option(
         "none",
@@ -103,9 +149,7 @@ def check_command(
     ),
 ) -> None:
     """Compare two RAG manifests."""
-    if output_format not in {"text", "json"}:
-        console.print("[red]Unsupported format.[/red] Use 'text' or 'json'.")
-        raise typer.Exit(1)
+    resolved_format = _resolve_format(output_format)
 
     fail_threshold = normalize_fail_on(fail_on)
     if fail_threshold is None:
@@ -124,13 +168,115 @@ def check_command(
     changes = diff_manifests(old_data, new_data)
     report = build_report(changes)
 
-    if output_format == "json":
-        typer.echo(render_json_report(report))
-    else:
-        console.print(render_text_report(report), markup=False)
+    _emit_report(report, resolved_format, output)
 
     if should_fail_report(report, fail_threshold):
         raise typer.Exit(1)
+
+
+@app.command("report")
+def report_command(
+    input_path: Path = typer.Option(
+        ...,
+        "--input",
+        "-i",
+        help="JSON report from 'rag-blast check --format json'. Use '-' to read stdin.",
+    ),
+    output_format: str = typer.Option(
+        "text",
+        "--format",
+        help=FORMAT_HELP,
+    ),
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Write the report to a file instead of stdout. Existing files are overwritten.",
+    ),
+) -> None:
+    """Re-render a saved JSON report in another format."""
+    resolved_format = _resolve_format(output_format)
+
+    try:
+        if str(input_path) == "-":
+            report = parse_report(sys.stdin.read(), source="<stdin>")
+        else:
+            report = load_report(input_path)
+        _emit_report(report, resolved_format, output)
+    except ReportLoadError as error:
+        console.print(f"[red]{error}[/red]")
+        raise typer.Exit(1) from None
+
+
+@app.command("validate")
+def validate_command(
+    manifests: list[Path] = typer.Argument(
+        ...,
+        help="One or more manifest paths to validate.",
+    ),
+) -> None:
+    """Validate RAG manifests without comparing them."""
+    invalid = False
+    for manifest_path in manifests:
+        try:
+            load_manifest(manifest_path)
+        except ManifestLoadError as error:
+            invalid = True
+            console.print(f"[red]{error}[/red]")
+            continue
+
+        console.print(f"[green]Valid manifest:[/green] {manifest_path}")
+
+    if invalid:
+        raise typer.Exit(1)
+
+
+@app.command("rules")
+def rules_command(
+    output_format: str = typer.Option(
+        "text",
+        "--format",
+        help="Output format: text or json.",
+    ),
+) -> None:
+    """List the deterministic blast-radius rules."""
+    normalized = output_format.strip().lower()
+    if normalized not in {"text", "json"}:
+        console.print("[red]Unsupported format.[/red] Use 'text' or 'json'.")
+        raise typer.Exit(1)
+
+    payload = rules_payload()
+    if normalized == "json":
+        typer.echo(json.dumps(payload, indent=2))
+        return
+
+    for rule in payload:
+        console.print(f"[bold]{rule['rule_id']}[/bold] ({rule['severity']})")
+        console.print(f"  {rule['summary']}", markup=False)
+
+    console.print("")
+    console.print("Run 'rag-blast explain RULE_ID' for the recommended action.")
+
+
+@app.command("schema")
+def schema_command(
+    output: Path | None = typer.Option(
+        None,
+        "--output",
+        "-o",
+        help="Write the JSON Schema to a file instead of stdout. Existing files are overwritten.",
+    ),
+) -> None:
+    """Print the JSON Schema for the RAG manifest."""
+    rendered = json.dumps(manifest_json_schema(), indent=2)
+
+    if output is None:
+        typer.echo(rendered)
+        return
+
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(rendered + "\n", encoding="utf-8")
+    console.print(f"[green]Wrote manifest schema:[/green] {output}")
 
 
 @integrations_app.command("llamaindex-qdrant")

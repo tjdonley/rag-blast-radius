@@ -1,15 +1,40 @@
 import json
 
+import pytest
+
 from rag_blast.diff import ManifestChange, ManifestDiff
 from rag_blast.report import (
+    REPORT_FORMATS,
+    ReportLoadError,
     build_report,
+    load_report,
     normalize_fail_on,
+    normalize_format,
+    parse_report,
+    render_github_output,
     render_html_report,
     render_json_report,
     render_markdown_report,
+    render_report,
     render_text_report,
     should_fail_report,
 )
+
+
+def _sample_report() -> dict:
+    return build_report(
+        ManifestDiff(
+            changes=(
+                ManifestChange(
+                    path="embedding.model",
+                    old="text-embedding-ada-002",
+                    new="text-embedding-3-large",
+                    category="embedding_model_changed",
+                    summary="Embedding model changed",
+                ),
+            )
+        )
+    )
 
 
 def test_render_text_report_lists_changes() -> None:
@@ -318,3 +343,97 @@ def test_should_fail_report_does_not_fail_empty_reports() -> None:
     report = build_report(ManifestDiff(changes=()))
 
     assert should_fail_report(report, "low") is False
+
+
+def test_report_formats_all_render_through_the_dispatcher() -> None:
+    """Every advertised format must have a renderer behind it."""
+    report = _sample_report()
+
+    for output_format in REPORT_FORMATS:
+        assert render_report(report, output_format).strip()
+
+
+def test_render_report_matches_the_dedicated_renderers() -> None:
+    report = _sample_report()
+
+    assert render_report(report, "text") == render_text_report(report)
+    assert render_report(report, "json") == render_json_report(report)
+    assert render_report(report, "markdown") == render_markdown_report(report)
+    assert render_report(report, "html") == render_html_report(report)
+    assert render_report(report, "github-output") == render_github_output(report)
+
+
+def test_render_report_rejects_an_unknown_format() -> None:
+    with pytest.raises(ValueError, match="Unsupported report format"):
+        render_report(_sample_report(), "xml")
+
+
+def test_render_github_output_emits_summary_fields() -> None:
+    rendered = render_github_output(_sample_report())
+
+    assert rendered.splitlines() == [
+        "risk=HIGH",
+        "change_count=1",
+        "finding_count=5",
+        "unassessed_change_count=0",
+    ]
+
+
+def test_render_github_output_rejects_multiline_values() -> None:
+    report = _sample_report()
+    report["risk"] = "HIGH\nrisk=INJECTED"
+
+    with pytest.raises(ReportLoadError, match="single-line"):
+        render_github_output(report)
+
+
+def test_normalize_format_accepts_known_values() -> None:
+    assert normalize_format("HTML") == "html"
+    assert normalize_format("  markdown  ") == "markdown"
+    assert normalize_format("github-output") == "github-output"
+
+
+def test_normalize_format_rejects_unknown_values() -> None:
+    assert normalize_format("xml") is None
+    assert normalize_format("") is None
+
+
+def test_parse_report_round_trips_a_rendered_json_report() -> None:
+    report = _sample_report()
+
+    parsed = parse_report(render_json_report(report), source="<test>")
+
+    assert parsed == report
+    assert render_markdown_report(parsed) == render_markdown_report(report)
+
+
+def test_parse_report_rejects_malformed_json() -> None:
+    with pytest.raises(ReportLoadError, match="Invalid JSON in report"):
+        parse_report("{", source="<test>")
+
+
+def test_parse_report_rejects_non_object_payloads() -> None:
+    with pytest.raises(ReportLoadError, match="must be a JSON object"):
+        parse_report("[]", source="<test>")
+
+
+def test_parse_report_rejects_payloads_missing_render_fields() -> None:
+    payload = _sample_report()
+    del payload["findings"]
+    del payload["note"]
+
+    with pytest.raises(ReportLoadError, match="missing required fields: findings, note"):
+        parse_report(json.dumps(payload), source="<test>")
+
+
+def test_load_report_reads_a_report_from_disk(tmp_path) -> None:
+    path = tmp_path / "report.json"
+    report = _sample_report()
+    path.write_text(render_json_report(report), encoding="utf-8")
+
+    assert load_report(path) == report
+
+
+def test_load_report_reports_unreadable_files(tmp_path) -> None:
+    with pytest.raises(ReportLoadError, match="Unable to read report"):
+        load_report(tmp_path / "missing.json")
