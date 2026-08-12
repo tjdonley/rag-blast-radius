@@ -117,6 +117,7 @@ VECTOR_INDEX_CATEGORIES = frozenset(
     {
         "vector_store_provider_changed",
         "vector_collection_changed",
+        "vector_store_alias_changed",
     }
 )
 RETRIEVER_CATEGORIES = frozenset(

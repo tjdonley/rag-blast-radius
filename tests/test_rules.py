@@ -79,9 +79,31 @@ def test_evaluate_rules_returns_deterministic_rule_order() -> None:
     ("path", "new_value", "expected_rule_ids"),
     [
         (
+            "vector_store.provider",
+            "weaviate",
+            [
+                "SEMANTIC_CACHE_UNSAFE",
+                "SHADOW_INDEX_RECOMMENDED",
+                "ROLLBACK_REQUIRES_OLD_INDEX",
+            ],
+        ),
+        (
             "vector_store.collection",
             "support_docs_v4",
-            ["SHADOW_INDEX_RECOMMENDED", "ROLLBACK_REQUIRES_OLD_INDEX"],
+            [
+                "SEMANTIC_CACHE_UNSAFE",
+                "SHADOW_INDEX_RECOMMENDED",
+                "ROLLBACK_REQUIRES_OLD_INDEX",
+            ],
+        ),
+        (
+            "vector_store.alias",
+            "SupportDocs",
+            [
+                "SEMANTIC_CACHE_UNSAFE",
+                "SHADOW_INDEX_RECOMMENDED",
+                "ROLLBACK_REQUIRES_OLD_INDEX",
+            ],
         ),
         (
             "retriever.top_k",
@@ -135,6 +157,18 @@ def test_evaluate_rules_does_not_trigger_semantic_cache_rule_for_chunking_withou
         "REEMBED_REQUIRED",
         "RETRIEVAL_BASELINE_STALE",
         "CHUNKING_CHANGED",
+        "SHADOW_INDEX_RECOMMENDED",
+        "ROLLBACK_REQUIRES_OLD_INDEX",
+    ]
+
+
+def test_vector_change_without_cache_does_not_trigger_semantic_cache_rule() -> None:
+    old = starter_manifest()
+    old["caches"] = []
+    new = deepcopy(old)
+    new["vector_store"]["collection"] = "support_docs_v4"
+
+    assert _finding_ids(diff_manifests(old, new)) == [
         "SHADOW_INDEX_RECOMMENDED",
         "ROLLBACK_REQUIRES_OLD_INDEX",
     ]
