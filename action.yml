@@ -139,14 +139,26 @@ runs:
           exit 1
         fi
 
-        rag-blast report --input "$JSON_REPORT" --format github-output > "$OUTPUT_FIELDS"
-        cat "$OUTPUT_FIELDS" >> "$GITHUB_OUTPUT"
+        # Publishing outputs and the job summary is documented behaviour, so a failure
+        # here must not be reported as a successful run.
+        if ! rag-blast report --input "$JSON_REPORT" --format github-output > "$OUTPUT_FIELDS"; then
+          echo "::error::rag-blast could not render the step outputs."
+          exit 1
+        fi
+
+        if ! cat "$OUTPUT_FIELDS" >> "$GITHUB_OUTPUT"; then
+          echo "::error::Unable to write step outputs to GITHUB_OUTPUT."
+          exit 1
+        fi
 
         RISK=$(sed -n 's/^risk=//p' "$OUTPUT_FIELDS")
         FINDING_COUNT=$(sed -n 's/^finding_count=//p' "$OUTPUT_FIELDS")
         UNASSESSED_COUNT=$(sed -n 's/^unassessed_change_count=//p' "$OUTPUT_FIELDS")
 
-        rag-blast report --input "$JSON_REPORT" --format markdown >> "$GITHUB_STEP_SUMMARY"
+        if ! rag-blast report --input "$JSON_REPORT" --format markdown >> "$GITHUB_STEP_SUMMARY"; then
+          echo "::error::Unable to write the job summary to GITHUB_STEP_SUMMARY."
+          exit 1
+        fi
 
         if [ "$PR_COMMENT" = "true" ]; then
           if [ -z "${GH_TOKEN:-}" ]; then

@@ -180,13 +180,16 @@ def _execute_action(
     report_format: str,
     pr_comment: str = "false",
     new_manifest: Path | None = None,
+    github_output: Path | None = None,
+    github_summary: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     runner_temp = tmp_path / "runner_temp"
     runner_temp.mkdir(exist_ok=True)
-    github_output = tmp_path / "github_output"
-    github_summary = tmp_path / "github_summary"
-    github_output.touch()
-    github_summary.touch()
+    github_output = github_output or tmp_path / "github_output"
+    github_summary = github_summary or tmp_path / "github_summary"
+    for env_file in (github_output, github_summary):
+        if env_file.parent.is_dir():
+            env_file.touch()
 
     env = {
         **os.environ,
@@ -279,3 +282,30 @@ def test_action_github_output_format_logs_only_key_value_lines(tmp_path) -> None
         "finding_count=5",
         "unassessed_change_count=2",
     ]
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is required to run the action")
+def test_action_script_fails_when_step_outputs_cannot_be_written(tmp_path) -> None:
+    """A passing check must not report success when its documented outputs are missing."""
+    result = _execute_action(
+        tmp_path,
+        fail_on="none",
+        report_format="text",
+        github_output=tmp_path / "missing-dir" / "github_output",
+    )
+
+    assert result.returncode == 1
+    assert "::error::Unable to write step outputs to GITHUB_OUTPUT." in result.stdout
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is required to run the action")
+def test_action_script_fails_when_the_job_summary_cannot_be_written(tmp_path) -> None:
+    result = _execute_action(
+        tmp_path,
+        fail_on="none",
+        report_format="text",
+        github_summary=tmp_path / "missing-dir" / "github_summary",
+    )
+
+    assert result.returncode == 1
+    assert "::error::Unable to write the job summary to GITHUB_STEP_SUMMARY." in result.stdout
