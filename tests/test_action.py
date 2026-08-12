@@ -256,3 +256,26 @@ def test_action_script_does_not_reuse_a_previous_runs_report(tmp_path) -> None:
     assert (tmp_path / "github_output").read_text(encoding="utf-8") == ""
     assert (tmp_path / "github_summary").read_text(encoding="utf-8") == ""
     assert not (tmp_path / "runner_temp" / "rag-blast-report.json").exists()
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is required to run the action")
+def test_action_json_format_logs_a_parseable_document(tmp_path) -> None:
+    """format: json is documented as machine-readable, so stdout must be pure JSON."""
+    result = _execute_action(tmp_path, fail_on="none", report_format="json")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout)["risk"] == "HIGH"
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is required to run the action")
+def test_action_github_output_format_logs_only_key_value_lines(tmp_path) -> None:
+    result = _execute_action(tmp_path, fail_on="none", report_format="github-output")
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    lines = [line for line in result.stdout.splitlines() if line.strip()]
+    assert lines == [
+        "risk=HIGH",
+        "change_count=5",
+        "finding_count=5",
+        "unassessed_change_count=2",
+    ]

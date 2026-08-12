@@ -325,7 +325,8 @@ def test_cli_check_writes_report_to_output_file(tmp_path) -> None:
     )
 
     assert result.exit_code == 0
-    assert "Wrote report:" in result.output
+    assert "Wrote report:" in result.stderr
+    assert result.stdout == ""
     written = output.read_text(encoding="utf-8")
     assert written.startswith("<!doctype html>")
     assert written.endswith("</html>\n")
@@ -606,3 +607,64 @@ def test_cli_report_reads_stdin(tmp_path) -> None:
 
     assert result.exit_code == 0
     assert "risk=HIGH" in result.output
+
+
+def test_cli_check_keeps_stdout_machine_readable_when_writing_a_file(tmp_path) -> None:
+    """Status text on stdout would corrupt --format json for anything parsing it."""
+    old_path, new_path = _write_manifests(tmp_path)
+
+    for output_format in ("json", "github-output"):
+        result = runner.invoke(
+            app,
+            [
+                "check",
+                "--old",
+                str(old_path),
+                "--new",
+                str(new_path),
+                "--format",
+                output_format,
+                "--output",
+                str(tmp_path / f"report.{output_format}"),
+            ],
+        )
+
+        assert result.exit_code == 0
+        assert result.stdout == ""
+        assert "Wrote report:" in result.stderr
+
+
+def test_cli_report_keeps_stdout_machine_readable_when_writing_a_file(tmp_path) -> None:
+    old_path, new_path = _write_manifests(tmp_path)
+    report_path = tmp_path / "report.json"
+    runner.invoke(
+        app,
+        [
+            "check",
+            "--old",
+            str(old_path),
+            "--new",
+            str(new_path),
+            "--format",
+            "json",
+            "--output",
+            str(report_path),
+        ],
+    )
+
+    result = runner.invoke(
+        app,
+        [
+            "report",
+            "--input",
+            str(report_path),
+            "--format",
+            "html",
+            "--output",
+            str(tmp_path / "r.html"),
+        ],
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout == ""
+    assert "Wrote report:" in result.stderr

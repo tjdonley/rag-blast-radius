@@ -65,13 +65,17 @@ def _resolve_format(value: str) -> str:
 
 
 def _emit_report(report: dict[str, Any], output_format: str, output: Path | None) -> None:
-    """Write a rendered report to a file, or print it to stdout."""
+    """Write a rendered report to a file, or print it to stdout.
+
+    Only report data ever reaches stdout, so `--format json` and `--format
+    github-output` stay machine-readable however the command is invoked.
+    """
     rendered = render_report(report, output_format).rstrip("\n")
 
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)
         output.write_text(rendered + "\n", encoding="utf-8")
-        console.print(f"[green]Wrote report:[/green] {output}")
+        err_console.print(f"[green]Wrote report:[/green] {output}", soft_wrap=True)
         return
 
     if output_format == "text":
