@@ -182,6 +182,10 @@ def _execute_action(
     new_manifest: Path | None = None,
     github_output: Path | None = None,
     github_summary: Path | None = None,
+    github_token: str = "",
+    event_path: Path | None = None,
+    repository: str | None = None,
+    extra_path: Path | None = None,
 ) -> subprocess.CompletedProcess[str]:
     runner_temp = tmp_path / "runner_temp"
     runner_temp.mkdir(exist_ok=True)
@@ -198,13 +202,25 @@ def _execute_action(
         "FAIL_ON": fail_on,
         "REPORT_FORMAT": report_format,
         "PR_COMMENT": pr_comment,
-        "GH_TOKEN": "",
+        "GH_TOKEN": github_token,
         "RUNNER_TEMP": str(runner_temp),
         "GITHUB_OUTPUT": str(github_output),
         "GITHUB_STEP_SUMMARY": str(github_summary),
-        "PATH": f"{Path(sys.executable).parent}{os.pathsep}{os.environ.get('PATH', '')}",
+        "PATH": os.pathsep.join(
+            part
+            for part in (
+                str(extra_path) if extra_path else "",
+                str(Path(sys.executable).parent),
+                os.environ.get("PATH", ""),
+            )
+            if part
+        ),
     }
     env.pop("GITHUB_EVENT_PATH", None)
+    if event_path is not None:
+        env["GITHUB_EVENT_PATH"] = str(event_path)
+    if repository is not None:
+        env["GITHUB_REPOSITORY"] = repository
 
     return subprocess.run(
         ["bash", "-c", _run_script()],
@@ -309,3 +325,97 @@ def test_action_script_fails_when_the_job_summary_cannot_be_written(tmp_path) ->
 
     assert result.returncode == 1
     assert "::error::Unable to write the job summary to GITHUB_STEP_SUMMARY." in result.stdout
+
+
+GH_STUB = """#!/usr/bin/env bash
+set -u
+printf 'CALL %s\\n' "$*" >> "$GH_STUB_LOG"
+previous=""
+for argument in "$@"; do
+  if [ "$previous" = "--input" ]; then
+    cp "$argument" "$GH_STUB_PAYLOAD"
+  fi
+  previous="$argument"
+done
+case "$*" in
+  *"-X PATCH"*|*"-X POST"*) exit 0 ;;
+  *) cat "$GH_STUB_COMMENTS" ;;
+esac
+"""
+
+
+@pytest.mark.skipif(
+    shutil.which("bash") is None or shutil.which("jq") is None,
+    reason="bash and jq are required to run the action's PR comment path",
+)
+def test_action_creates_a_pr_comment_when_no_marker_exists(tmp_path) -> None:
+    calls, body = _run_pr_comment_action(tmp_path, existing_comments=[])
+
+    assert any("-X POST" in call and "issues/7/comments" in call for call in calls)
+    assert not any("-X PATCH" in call for call in calls)
+    assert "<!-- rag-blast-radius-report -->" in body
+    assert "## RAG Blast Radius" in body
+    assert "REEMBED_REQUIRED" in body
+
+
+@pytest.mark.skipif(
+    shutil.which("bash") is None or shutil.which("jq") is None,
+    reason="bash and jq are required to run the action's PR comment path",
+)
+def test_action_updates_the_existing_marked_pr_comment(tmp_path) -> None:
+    existing = [
+        {"id": 111, "body": "unrelated review chatter"},
+        {"id": 222, "body": "<!-- rag-blast-radius-report -->\n\nstale report"},
+        {"id": 333, "body": "<!-- rag-blast-radius-report -->\n\nolder duplicate"},
+    ]
+
+    calls, body = _run_pr_comment_action(tmp_path, existing_comments=existing)
+
+    assert any("-X PATCH" in call and "issues/comments/222" in call for call in calls)
+    assert not any("-X POST" in call for call in calls)
+    assert not any("issues/comments/111" in call for call in calls)
+    assert "## RAG Blast Radius" in body
+
+
+def _run_pr_comment_action(tmp_path: Path, *, existing_comments: list) -> tuple[list[str], str]:
+    stub_dir = tmp_path / "bin"
+    stub_dir.mkdir()
+    gh_stub = stub_dir / "gh"
+    gh_stub.write_text(GH_STUB, encoding="utf-8")
+    gh_stub.chmod(0o755)
+
+    comments_fixture = tmp_path / "comments.json"
+    comments_fixture.write_text(json.dumps(existing_comments), encoding="utf-8")
+    log = tmp_path / "gh.log"
+    log.touch()
+
+    event = tmp_path / "event.json"
+    event.write_text(json.dumps({"pull_request": {"number": 7}}), encoding="utf-8")
+
+    payload = tmp_path / "sent-payload.json"
+    os.environ["GH_STUB_LOG"] = str(log)
+    os.environ["GH_STUB_COMMENTS"] = str(comments_fixture)
+    os.environ["GH_STUB_PAYLOAD"] = str(payload)
+    try:
+        result = _execute_action(
+            tmp_path,
+            fail_on="none",
+            report_format="text",
+            pr_comment="true",
+            github_token="fake-token",
+            event_path=event,
+            repository="tjdonley/rag-blast-radius",
+            extra_path=stub_dir,
+        )
+    finally:
+        os.environ.pop("GH_STUB_LOG", None)
+        os.environ.pop("GH_STUB_COMMENTS", None)
+        os.environ.pop("GH_STUB_PAYLOAD", None)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "::warning::" not in result.stdout, result.stdout
+
+    entries = log.read_text(encoding="utf-8")
+    calls = [line[5:] for line in entries.splitlines() if line.startswith("CALL ")]
+    assert payload.exists(), "no comment payload was sent"
+    return calls, json.loads(payload.read_text(encoding="utf-8"))["body"]

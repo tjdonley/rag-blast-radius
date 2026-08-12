@@ -177,14 +177,16 @@ runs:
               COMMENT_PAYLOAD="$RUNNER_TEMP/rag-blast-pr-comment.json"
               COMMENTS_JSON="$RUNNER_TEMP/rag-blast-comments.json"
 
-              {
-                printf '%s\n\n' "$COMMENT_MARKER"
-                rag-blast report --input "$JSON_REPORT" --format markdown
-              } > "$COMMENT_BODY"
-
-              jq -Rs '{body: .}' < "$COMMENT_BODY" > "$COMMENT_PAYLOAD"
-
-              if ! gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate > "$COMMENTS_JSON"; then
+              # Unchecked, a failed render would post a comment containing nothing but
+              # the marker. The comment is best-effort, so degrade instead of failing.
+              if ! {
+                   printf '%s\n\n' "$COMMENT_MARKER"
+                   rag-blast report --input "$JSON_REPORT" --format markdown
+                 } > "$COMMENT_BODY"; then
+                echo "::warning::Unable to render the PR comment body; skipping PR comment."
+              elif ! jq -Rs '{body: .}' < "$COMMENT_BODY" > "$COMMENT_PAYLOAD"; then
+                echo "::warning::Unable to build the PR comment payload; skipping PR comment."
+              elif ! gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate > "$COMMENTS_JSON"; then
                 echo "::warning::Unable to fetch existing PR comments; skipping PR comment."
               else
                 COMMENT_ID=$(jq -r --arg marker "$COMMENT_MARKER" \
