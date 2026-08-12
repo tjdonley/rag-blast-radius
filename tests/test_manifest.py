@@ -3,9 +3,11 @@ from pathlib import Path
 
 import pytest
 
+from rag_blast.diff import diff_manifests
 from rag_blast.manifest import (
     ManifestLoadError,
     load_manifest,
+    manifest_json_schema,
     starter_manifest,
     validate_manifest,
     write_starter_manifest,
@@ -133,3 +135,64 @@ def test_example_manifests_are_valid() -> None:
     assert manifest_paths
     for path in manifest_paths:
         load_manifest(path)
+
+
+def test_validate_manifest_accepts_and_drops_a_schema_reference() -> None:
+    manifest = starter_manifest()
+    manifest["$schema"] = "./rag-manifest.schema.json"
+
+    validated = validate_manifest(manifest)
+
+    assert "$schema" not in validated
+    assert validated == starter_manifest()
+
+
+def test_schema_reference_never_appears_as_a_manifest_change() -> None:
+    old = starter_manifest()
+    new = starter_manifest()
+    old["$schema"] = "./rag-manifest.schema.json"
+    new["$schema"] = "https://example.com/other.schema.json"
+
+    diff = diff_manifests(validate_manifest(old), validate_manifest(new))
+
+    assert diff.changes == ()
+
+
+def test_validate_manifest_rejects_a_non_string_schema_reference() -> None:
+    manifest = starter_manifest()
+    manifest["$schema"] = 42
+
+    with pytest.raises(ManifestLoadError, match=r"\$schema: Input should be a valid string"):
+        validate_manifest(manifest)
+
+
+def test_manifest_json_schema_declares_the_schema_reference_property() -> None:
+    schema = manifest_json_schema()
+
+    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert schema["title"] == "RAG Manifest"
+    assert schema["additionalProperties"] is False
+    assert schema["properties"]["$schema"]["type"] == "string"
+    assert set(schema["required"]) == {
+        "app",
+        "environment",
+        "embedding",
+        "chunking",
+        "vector_store",
+        "retriever",
+    }
+
+
+def test_manifest_json_schema_describes_every_manifest_section() -> None:
+    properties = manifest_json_schema()["properties"]
+
+    for section in ("app", "environment", "embedding", "chunking", "vector_store", "retriever"):
+        assert section in properties
+    assert set(manifest_json_schema()["$defs"]) >= {
+        "EmbeddingConfig",
+        "ChunkingConfig",
+        "VectorStoreConfig",
+        "RetrieverConfig",
+        "CacheConfig",
+        "EvalConfig",
+    }
