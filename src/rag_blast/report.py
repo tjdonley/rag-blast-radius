@@ -10,18 +10,21 @@ from rag_blast.rules import RuleFinding, SEVERITY_ORDER, evaluate_rules, highest
 
 FAIL_ON_VALUES = frozenset({"none", "low", "medium", "high"})
 REPORT_FORMATS = ("text", "json", "markdown", "html", "github-output")
-REPORT_REQUIRED_KEYS = (
-    "risk",
-    "change_count",
-    "categories",
-    "changes",
-    "finding_count",
-    "findings",
-    "unassessed_change_count",
-    "unassessed_change_paths",
-    "recommended_rollout",
-    "note",
-)
+REPORT_FIELD_TYPES = {
+    "risk": "string",
+    "change_count": "integer",
+    "categories": "array",
+    "changes": "array",
+    "finding_count": "integer",
+    "findings": "array",
+    "unassessed_change_count": "integer",
+    "unassessed_change_paths": "array",
+    "recommended_rollout": "array",
+    "note": "string",
+}
+REPORT_REQUIRED_KEYS = tuple(REPORT_FIELD_TYPES)
+REPORT_CHANGE_KEYS = ("path", "category", "summary", "old", "new")
+REPORT_FINDING_KEYS = ("rule_id", "severity", "summary", "change_paths")
 GITHUB_OUTPUT_FIELDS = (
     "risk",
     "change_count",
@@ -350,9 +353,10 @@ def parse_report(raw: str, *, source: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ReportLoadError(f"Report must be a JSON object: {source}")
 
-    missing = [key for key in REPORT_REQUIRED_KEYS if key not in data]
-    if missing:
-        raise ReportLoadError(f"Report {source} is missing required fields: {', '.join(missing)}")
+    problems = _report_problems(data)
+    if problems:
+        details = "\n".join(f"- {problem}" for problem in problems)
+        raise ReportLoadError(f"Report {source} is not a rag-blast report:\n{details}")
 
     return data
 
@@ -424,6 +428,67 @@ def _unassessed_change_paths(
     return tuple(
         change.path for change in manifest_diff.changes if change.path not in assessed_paths
     )
+
+
+def _report_problems(data: dict[str, Any]) -> list[str]:
+    """Return every reason a payload cannot be rendered, in report field order."""
+    problems: list[str] = []
+
+    for field, expected in REPORT_FIELD_TYPES.items():
+        if field not in data:
+            problems.append(f"{field}: missing")
+        elif not _matches_json_type(data[field], expected):
+            problems.append(f"{field}: expected {_article(expected)} {expected}")
+
+    problems.extend(_entry_problems(data.get("changes"), "changes", REPORT_CHANGE_KEYS))
+    problems.extend(
+        _entry_problems(
+            data.get("findings"),
+            "findings",
+            REPORT_FINDING_KEYS,
+            array_keys=("change_paths",),
+        )
+    )
+    return problems
+
+
+def _entry_problems(
+    entries: Any,
+    field: str,
+    required_keys: tuple[str, ...],
+    *,
+    array_keys: tuple[str, ...] = (),
+) -> list[str]:
+    if not isinstance(entries, list):
+        return []
+
+    problems: list[str] = []
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            problems.append(f"{field}[{index}]: expected an object")
+            continue
+
+        missing = [key for key in required_keys if key not in entry]
+        if missing:
+            problems.append(f"{field}[{index}]: missing {', '.join(missing)}")
+
+        for key in array_keys:
+            if key in entry and not isinstance(entry[key], list):
+                problems.append(f"{field}[{index}].{key}: expected an array")
+
+    return problems
+
+
+def _matches_json_type(value: Any, expected: str) -> bool:
+    if expected == "string":
+        return isinstance(value, str)
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    return isinstance(value, list)
+
+
+def _article(expected: str) -> str:
+    return "an" if expected in {"array", "integer", "object"} else "a"
 
 
 def _github_output_value(value: Any) -> str:

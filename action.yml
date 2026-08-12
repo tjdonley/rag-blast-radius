@@ -108,6 +108,11 @@ runs:
         JSON_REPORT="$RUNNER_TEMP/rag-blast-report.json"
         OUTPUT_FIELDS="$RUNNER_TEMP/rag-blast-outputs.txt"
 
+        # $RUNNER_TEMP is shared by every step in the job, so a second use of this
+        # action would otherwise re-render the first one's report when its own check
+        # fails before writing.
+        rm -f "$JSON_REPORT" "$OUTPUT_FIELDS"
+
         # One check run writes the JSON report and applies the fail_on threshold.
         # Every other view of the report is re-rendered from that file.
         rag-blast check \

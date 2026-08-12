@@ -451,7 +451,34 @@ def test_cli_report_rejects_a_payload_that_is_not_a_report(tmp_path) -> None:
     result = runner.invoke(app, ["report", "--input", str(report_path)])
 
     assert result.exit_code == 1
-    assert "missing required fields" in result.output
+    assert "is not a rag-blast report" in result.output
+    assert "changes: missing" in result.output
+
+
+def test_cli_report_reports_a_malformed_payload_instead_of_crashing(tmp_path) -> None:
+    """A structurally wrong report must produce a diagnostic, never a traceback."""
+    report_path = tmp_path / "report.json"
+    payload = {
+        "risk": "HIGH",
+        "change_count": 1,
+        "categories": [],
+        "changes": [None],
+        "finding_count": 0,
+        "findings": {},
+        "unassessed_change_count": 0,
+        "unassessed_change_paths": [],
+        "recommended_rollout": [],
+        "note": "x",
+    }
+    report_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    result = runner.invoke(app, ["report", "--input", str(report_path)])
+
+    assert result.exit_code == 1
+    assert result.exception is None or isinstance(result.exception, SystemExit)
+    assert "findings: expected an array" in result.output
+    assert "changes[0]: expected an object" in result.output
+    assert "Traceback" not in result.output
 
 
 def test_cli_report_rejects_a_missing_file(tmp_path) -> None:

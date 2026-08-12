@@ -232,3 +232,27 @@ def _run_script() -> str:
 
 def _load_action() -> dict:
     return yaml.safe_load((ROOT / "action.yml").read_text(encoding="utf-8"))
+
+
+@pytest.mark.skipif(shutil.which("bash") is None, reason="bash is required to run the action")
+def test_action_script_does_not_reuse_a_previous_runs_report(tmp_path) -> None:
+    """$RUNNER_TEMP is shared across a job, so a stale report must never be re-rendered."""
+    broken = tmp_path / "broken.json"
+    broken.write_text("{", encoding="utf-8")
+
+    first = _execute_action(tmp_path, fail_on="none", report_format="text")
+    assert first.returncode == 0, first.stdout + first.stderr
+    assert _parse_env_file(tmp_path / "github_output")["risk"] == "HIGH"
+
+    (tmp_path / "github_output").write_text("", encoding="utf-8")
+    (tmp_path / "github_summary").write_text("", encoding="utf-8")
+
+    second = _execute_action(
+        tmp_path, fail_on="none", report_format="text", new_manifest=broken
+    )
+
+    assert second.returncode == 1
+    assert "::error::rag-blast did not produce a report." in second.stdout
+    assert (tmp_path / "github_output").read_text(encoding="utf-8") == ""
+    assert (tmp_path / "github_summary").read_text(encoding="utf-8") == ""
+    assert not (tmp_path / "runner_temp" / "rag-blast-report.json").exists()

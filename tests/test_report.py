@@ -422,7 +422,7 @@ def test_parse_report_rejects_payloads_missing_render_fields() -> None:
     del payload["findings"]
     del payload["note"]
 
-    with pytest.raises(ReportLoadError, match="missing required fields: findings, note"):
+    with pytest.raises(ReportLoadError, match=r"findings: missing\n- note: missing"):
         parse_report(json.dumps(payload), source="<test>")
 
 
@@ -437,3 +437,83 @@ def test_load_report_reads_a_report_from_disk(tmp_path) -> None:
 def test_load_report_reports_unreadable_files(tmp_path) -> None:
     with pytest.raises(ReportLoadError, match="Unable to read report"):
         load_report(tmp_path / "missing.json")
+
+
+def test_parse_report_rejects_mistyped_top_level_fields() -> None:
+    payload = _sample_report()
+    payload["risk"] = ["HIGH"]
+    payload["change_count"] = "1"
+    payload["findings"] = {}
+
+    with pytest.raises(ReportLoadError) as error:
+        parse_report(json.dumps(payload), source="<test>")
+
+    message = str(error.value)
+    assert "risk: expected a string" in message
+    assert "change_count: expected an integer" in message
+    assert "findings: expected an array" in message
+
+
+def test_parse_report_rejects_booleans_where_counts_are_required() -> None:
+    payload = _sample_report()
+    payload["change_count"] = True
+
+    with pytest.raises(ReportLoadError, match="change_count: expected an integer"):
+        parse_report(json.dumps(payload), source="<test>")
+
+
+def test_parse_report_rejects_malformed_change_and_finding_entries() -> None:
+    payload = _sample_report()
+    payload["changes"] = [None]
+    payload["findings"] = [{"rule_id": "X"}]
+
+    with pytest.raises(ReportLoadError) as error:
+        parse_report(json.dumps(payload), source="<test>")
+
+    message = str(error.value)
+    assert "changes[0]: expected an object" in message
+    assert "findings[0]: missing severity, summary, change_paths" in message
+
+
+def test_parse_report_rejects_non_array_change_paths() -> None:
+    payload = _sample_report()
+    payload["findings"][0]["change_paths"] = "embedding.model"
+
+    with pytest.raises(ReportLoadError, match=r"findings\[0\]\.change_paths: expected an array"):
+        parse_report(json.dumps(payload), source="<test>")
+
+
+def test_any_payload_parse_report_accepts_renders_in_every_format() -> None:
+    """Whatever survives validation must never make a renderer raise."""
+    payload = {
+        "risk": "HIGH",
+        "change_count": 0,
+        "categories": [None, {"a": 1}, [1]],
+        "changes": [
+            {
+                "path": {"x": 1},
+                "category": [1, 2],
+                "summary": None,
+                "old": {"k": [1]},
+                "new": True,
+            }
+        ],
+        "finding_count": 0,
+        "findings": [
+            {
+                "rule_id": None,
+                "severity": {"a": 1},
+                "summary": [1],
+                "change_paths": [None, {"z": 1}],
+            }
+        ],
+        "unassessed_change_count": 0,
+        "unassessed_change_paths": [None, {"q": 2}],
+        "recommended_rollout": [None, {"s": 1}],
+        "note": "n",
+    }
+
+    report = parse_report(json.dumps(payload), source="<test>")
+
+    for output_format in REPORT_FORMATS:
+        assert render_report(report, output_format) is not None
