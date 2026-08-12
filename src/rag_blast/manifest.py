@@ -11,6 +11,7 @@ NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_len
 
 SCHEMA_REFERENCE_KEY = "$schema"
 JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
+NON_WHITESPACE_PATTERN = r"\S"
 
 
 class ManifestLoadError(Exception):
@@ -138,7 +139,7 @@ def load_manifest(path: Path) -> dict[str, Any]:
 
 def manifest_json_schema() -> dict[str, Any]:
     """Return a JSON Schema document describing the RAG manifest."""
-    model_schema = RagManifest.model_json_schema()
+    model_schema = _require_non_whitespace(RagManifest.model_json_schema())
     properties = dict(model_schema.get("properties", {}))
     properties[SCHEMA_REFERENCE_KEY] = {
         "type": "string",
@@ -151,7 +152,12 @@ def manifest_json_schema() -> dict[str, Any]:
     schema: dict[str, Any] = {
         SCHEMA_REFERENCE_KEY: JSON_SCHEMA_DIALECT,
         "title": "RAG Manifest",
-        "description": "Deployed state of a RAG application, as checked by rag-blast.",
+        "description": (
+            "Deployed state of a RAG application, as checked by rag-blast. "
+            "JSON Schema cannot express rules that compare two fields, so "
+            "chunking.chunk_overlap < chunking.chunk_size is enforced only by "
+            "'rag-blast validate' and 'rag-blast check'."
+        ),
     }
     schema.update(
         {key: value for key, value in model_schema.items() if key not in {"title", "description"}}
@@ -174,6 +180,24 @@ def validate_manifest(data: Any, *, path: Path | None = None) -> dict[str, Any]:
         raise ManifestLoadError(_format_validation_errors(error, path=path)) from error
 
     return manifest.model_dump(mode="json")
+
+
+def _require_non_whitespace(node: Any) -> Any:
+    """Mirror NonEmptyString's strip-then-check behaviour in the exported schema.
+
+    Pydantic emits only ``minLength: 1`` for these fields, so an editor would accept
+    a whitespace-only value that ``validate_manifest`` strips and rejects.
+    """
+    if isinstance(node, dict):
+        transformed = {key: _require_non_whitespace(value) for key, value in node.items()}
+        if transformed.get("type") == "string" and transformed.get("minLength") == 1:
+            transformed.setdefault("pattern", NON_WHITESPACE_PATTERN)
+        return transformed
+
+    if isinstance(node, list):
+        return [_require_non_whitespace(item) for item in node]
+
+    return node
 
 
 def _without_schema_reference(data: dict[str, Any], *, path: Path | None) -> dict[str, Any]:

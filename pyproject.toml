@@ -19,6 +19,7 @@ rag-blast = "rag_blast.cli:app"
 
 [dependency-groups]
 dev = [
+  "jsonschema>=4.0.0",
   "pytest>=8.0.0",
   "pyyaml>=6.0.0",
   "ruff>=0.6.0",

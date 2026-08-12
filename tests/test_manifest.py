@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+import jsonschema
 import pytest
 
 from rag_blast.diff import diff_manifests
@@ -196,3 +197,83 @@ def test_manifest_json_schema_describes_every_manifest_section() -> None:
         "CacheConfig",
         "EvalConfig",
     }
+
+
+def test_manifest_json_schema_is_a_valid_schema_document() -> None:
+    jsonschema.Draft202012Validator.check_schema(manifest_json_schema())
+
+
+def test_manifest_json_schema_accepts_a_starter_manifest_with_a_schema_reference() -> None:
+    manifest = starter_manifest()
+    manifest["$schema"] = "./.rag-manifest.schema.json"
+
+    jsonschema.validate(manifest, manifest_json_schema())
+
+
+def test_manifest_json_schema_rejects_unknown_keys() -> None:
+    manifest = starter_manifest()
+    manifest["nonsense"] = 1
+
+    with pytest.raises(jsonschema.ValidationError, match="Additional properties"):
+        jsonschema.validate(manifest, manifest_json_schema())
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        pytest.param(lambda m: m.__setitem__("app", "   "), id="top-level-string"),
+        pytest.param(lambda m: m["embedding"].__setitem__("model", "  "), id="nested-string"),
+        pytest.param(lambda m: m["vector_store"].__setitem__("alias", " "), id="nullable-string"),
+        pytest.param(lambda m: m["caches"][0].__setitem__("namespace", "\t"), id="list-item"),
+        pytest.param(lambda m: m["evals"][0].__setitem__("name", " "), id="list-item-name"),
+    ],
+)
+def test_exported_schema_rejects_whitespace_only_strings_like_the_runtime_does(mutate) -> None:
+    """NonEmptyString strips before checking length, so minLength alone under-reports."""
+    manifest = starter_manifest()
+    mutate(manifest)
+
+    with pytest.raises(ManifestLoadError):
+        validate_manifest(manifest)
+
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(manifest, manifest_json_schema())
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        pytest.param(lambda m: m["embedding"].__setitem__("dimensions", 0), id="positive-int"),
+        pytest.param(
+            lambda m: m["embedding"].__setitem__("dimensions", "1536"), id="int-as-string"
+        ),
+        pytest.param(lambda m: m["retriever"].__setitem__("top_k", -1), id="negative-top-k"),
+        pytest.param(
+            lambda m: m["chunking"].__setitem__("chunk_overlap", -5), id="negative-overlap"
+        ),
+        pytest.param(lambda m: m["retriever"].__setitem__("hybrid", "yes"), id="bool-as-string"),
+        pytest.param(lambda m: m.pop("embedding"), id="missing-section"),
+    ],
+)
+def test_exported_schema_agrees_with_the_runtime_validator(mutate) -> None:
+    manifest = starter_manifest()
+    mutate(manifest)
+
+    with pytest.raises(ManifestLoadError):
+        validate_manifest(manifest)
+
+    with pytest.raises(jsonschema.ValidationError):
+        jsonschema.validate(manifest, manifest_json_schema())
+
+
+def test_cross_field_chunking_rule_is_documented_as_runtime_only() -> None:
+    """JSON Schema cannot compare two fields, so the schema must say where that rule lives."""
+    manifest = starter_manifest()
+    manifest["chunking"]["chunk_overlap"] = manifest["chunking"]["chunk_size"]
+
+    with pytest.raises(ManifestLoadError, match="chunk_overlap must be smaller than chunk_size"):
+        validate_manifest(manifest)
+
+    schema = manifest_json_schema()
+    jsonschema.validate(manifest, schema)
+    assert "chunk_overlap < chunking.chunk_size" in schema["description"]
