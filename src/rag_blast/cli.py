@@ -59,7 +59,9 @@ def _version_callback(value: bool) -> None:
 def _resolve_format(value: str) -> str:
     resolved = normalize_format(value)
     if resolved is None:
-        console.print(f"[red]Unsupported format.[/red] Use one of: {', '.join(REPORT_FORMATS)}.")
+        err_console.print(
+            f"[red]Unsupported format.[/red] Use one of: {', '.join(REPORT_FORMATS)}."
+        )
         raise typer.Exit(1)
     return resolved
 
@@ -157,7 +159,7 @@ def check_command(
 
     fail_threshold = normalize_fail_on(fail_on)
     if fail_threshold is None:
-        console.print(
+        err_console.print(
             "[red]Unsupported fail-on threshold.[/red] Use 'none', 'low', 'medium', or 'high'."
         )
         raise typer.Exit(1)
@@ -166,7 +168,7 @@ def check_command(
         old_data = load_manifest(old_manifest)
         new_data = load_manifest(new_manifest)
     except ManifestLoadError as error:
-        console.print(f"[red]{error}[/red]")
+        err_console.print(f"[red]{error}[/red]")
         raise typer.Exit(1) from None
 
     changes = diff_manifests(old_data, new_data)
@@ -208,7 +210,7 @@ def report_command(
             report = load_report(input_path)
         _emit_report(report, resolved_format, output)
     except ReportLoadError as error:
-        console.print(f"[red]{error}[/red]")
+        err_console.print(f"[red]{error}[/red]")
         raise typer.Exit(1) from None
 
 
@@ -246,7 +248,7 @@ def rules_command(
     """List the deterministic blast-radius rules."""
     normalized = output_format.strip().lower()
     if normalized not in {"text", "json"}:
-        console.print("[red]Unsupported format.[/red] Use 'text' or 'json'.")
+        err_console.print("[red]Unsupported format.[/red] Use 'text' or 'json'.")
         raise typer.Exit(1)
 
     payload = rules_payload()

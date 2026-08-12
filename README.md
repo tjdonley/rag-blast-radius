@@ -172,7 +172,7 @@ rag-blast report --input report.json --format html --output report.html
 
 `check` writes its report before applying `--fail-on`, so a blocking run still leaves the artifact behind. `report` also reads stdin with `--input -`.
 
-`check` and `report` print only report data to stdout; status messages such as `Wrote report:` go to stderr. `--format json` and `--format github-output` therefore stay parseable whether the report goes to stdout or to a file.
+`check`, `report`, and `rules` print only report data to stdout. Status messages such as `Wrote report:` and every error diagnostic go to stderr, so `--format json` and `--format github-output` stay parseable whether the report goes to stdout or to a file, and a redirect such as `rag-blast report --input bad.json --format json > out.json` never captures error text into the data file.
 
 ### Editor Support
 

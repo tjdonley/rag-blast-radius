@@ -212,7 +212,7 @@ def test_cli_check_rejects_invalid_format(tmp_path) -> None:
     )
 
     assert result.exit_code == 1
-    assert "Unsupported format" in result.output
+    assert "Unsupported format" in result.stderr
 
 
 def test_cli_check_rejects_invalid_fail_on_threshold(tmp_path) -> None:
@@ -233,7 +233,7 @@ def test_cli_check_rejects_invalid_fail_on_threshold(tmp_path) -> None:
     )
 
     assert result.exit_code == 1
-    assert "Unsupported fail-on threshold" in result.output
+    assert "Unsupported fail-on threshold" in result.stderr
 
 
 def test_cli_check_rejects_malformed_json(tmp_path) -> None:
@@ -245,7 +245,7 @@ def test_cli_check_rejects_malformed_json(tmp_path) -> None:
     result = runner.invoke(app, ["check", "--old", str(old_path), "--new", str(new_path)])
 
     assert result.exit_code == 1
-    assert "Invalid JSON" in result.output
+    assert "Invalid JSON" in result.stderr
 
 
 def test_cli_explain_known_rule() -> None:
@@ -442,7 +442,7 @@ def test_cli_report_rejects_malformed_json(tmp_path) -> None:
     result = runner.invoke(app, ["report", "--input", str(report_path)])
 
     assert result.exit_code == 1
-    assert "Invalid JSON in report" in result.output
+    assert "Invalid JSON in report" in result.stderr
 
 
 def test_cli_report_rejects_a_payload_that_is_not_a_report(tmp_path) -> None:
@@ -452,8 +452,8 @@ def test_cli_report_rejects_a_payload_that_is_not_a_report(tmp_path) -> None:
     result = runner.invoke(app, ["report", "--input", str(report_path)])
 
     assert result.exit_code == 1
-    assert "is not a rag-blast report" in result.output
-    assert "changes: missing" in result.output
+    assert "is not a rag-blast report" in result.stderr
+    assert "changes: missing" in result.stderr
 
 
 def test_cli_report_reports_a_malformed_payload_instead_of_crashing(tmp_path) -> None:
@@ -477,8 +477,8 @@ def test_cli_report_reports_a_malformed_payload_instead_of_crashing(tmp_path) ->
 
     assert result.exit_code == 1
     assert result.exception is None or isinstance(result.exception, SystemExit)
-    assert "findings: expected an array" in result.output
-    assert "changes[0]: expected an object" in result.output
+    assert "findings: expected an array" in result.stderr
+    assert "changes[0]: expected an object" in result.stderr
     assert "Traceback" not in result.output
 
 
@@ -486,7 +486,7 @@ def test_cli_report_rejects_a_missing_file(tmp_path) -> None:
     result = runner.invoke(app, ["report", "--input", str(tmp_path / "nope.json")])
 
     assert result.exit_code == 1
-    assert "Unable to read report" in result.output
+    assert "Unable to read report" in result.stderr
 
 
 def test_cli_report_rejects_an_unsupported_format(tmp_path) -> None:
@@ -496,7 +496,7 @@ def test_cli_report_rejects_an_unsupported_format(tmp_path) -> None:
     result = runner.invoke(app, ["report", "--input", str(report_path), "--format", "xml"])
 
     assert result.exit_code == 1
-    assert "Unsupported format" in result.output
+    assert "Unsupported format" in result.stderr
 
 
 def test_cli_validate_accepts_a_valid_manifest(tmp_path) -> None:
@@ -557,7 +557,7 @@ def test_cli_rules_rejects_an_unsupported_format() -> None:
     result = runner.invoke(app, ["rules", "--format", "html"])
 
     assert result.exit_code == 1
-    assert "Unsupported format" in result.output
+    assert "Unsupported format" in result.stderr
 
 
 def test_cli_schema_prints_a_usable_json_schema() -> None:
@@ -668,3 +668,31 @@ def test_cli_report_keeps_stdout_machine_readable_when_writing_a_file(tmp_path) 
     assert result.exit_code == 0
     assert result.stdout == ""
     assert "Wrote report:" in result.stderr
+
+
+def test_data_commands_never_write_diagnostics_to_stdout(tmp_path) -> None:
+    """stdout carries report data or nothing, so redirecting it can never capture errors."""
+    manifest = tmp_path / "manifest.json"
+    manifest.write_text(json.dumps(starter_manifest()), encoding="utf-8")
+    broken = tmp_path / "broken.json"
+    broken.write_text("{", encoding="utf-8")
+    not_a_report = tmp_path / "not-a-report.json"
+    not_a_report.write_text(json.dumps({"risk": "HIGH"}), encoding="utf-8")
+
+    failing_invocations = [
+        ["check", "--old", str(manifest), "--new", str(manifest), "--format", "xml"],
+        ["check", "--old", str(manifest), "--new", str(manifest), "--fail-on", "critical"],
+        ["check", "--old", str(broken), "--new", str(manifest), "--format", "json"],
+        ["report", "--input", str(broken), "--format", "json"],
+        ["report", "--input", str(not_a_report), "--format", "json"],
+        ["report", "--input", str(tmp_path / "missing.json"), "--format", "json"],
+        ["report", "--input", str(not_a_report), "--format", "xml"],
+        ["rules", "--format", "xml"],
+    ]
+
+    for invocation in failing_invocations:
+        result = runner.invoke(app, invocation)
+
+        assert result.exit_code == 1, invocation
+        assert result.stdout == "", f"{invocation} leaked to stdout: {result.stdout!r}"
+        assert result.stderr.strip(), f"{invocation} reported nothing on stderr"
