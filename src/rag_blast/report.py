@@ -2,12 +2,35 @@ from __future__ import annotations
 
 import html
 import json
+from pathlib import Path
 from typing import Any
 
 from rag_blast.diff import ManifestDiff
 from rag_blast.rules import RuleFinding, SEVERITY_ORDER, evaluate_rules, highest_severity
 
 FAIL_ON_VALUES = frozenset({"none", "low", "medium", "high"})
+REPORT_FORMATS = ("text", "json", "markdown", "html", "github-output")
+REPORT_FIELD_TYPES = {
+    "risk": "string",
+    "change_count": "integer",
+    "categories": "array",
+    "changes": "array",
+    "finding_count": "integer",
+    "findings": "array",
+    "unassessed_change_count": "integer",
+    "unassessed_change_paths": "array",
+    "recommended_rollout": "array",
+    "note": "string",
+}
+REPORT_REQUIRED_KEYS = tuple(REPORT_FIELD_TYPES)
+REPORT_CHANGE_KEYS = ("path", "category", "summary", "old", "new")
+REPORT_FINDING_KEYS = ("rule_id", "severity", "summary", "change_paths")
+GITHUB_OUTPUT_FIELDS = (
+    "risk",
+    "change_count",
+    "finding_count",
+    "unassessed_change_count",
+)
 ROLLOUT_STEPS = {
     "REEMBED_REQUIRED": "Regenerate document embeddings for the proposed manifest.",
     "VECTOR_INDEX_INCOMPATIBLE": "Build a shadow vector index before serving new query embeddings.",
@@ -19,6 +42,10 @@ ROLLOUT_STEPS = {
     "SHADOW_INDEX_RECOMMENDED": "Canary or shadow traffic before switching production reads.",
     "ROLLBACK_REQUIRES_OLD_INDEX": "Keep the old index and cache namespace until the rollback window closes.",
 }
+
+
+class ReportLoadError(Exception):
+    """Raised when a report payload cannot be loaded as a renderable report."""
 
 
 def build_report(manifest_diff: ManifestDiff) -> dict[str, Any]:
@@ -291,6 +318,57 @@ def render_html_report(report: dict[str, Any]) -> str:
 """
 
 
+def render_github_output(report: dict[str, Any]) -> str:
+    """Render summary fields as ``key=value`` lines for GitHub Actions step outputs."""
+    return "\n".join(
+        f"{field}={_github_output_value(report[field])}" for field in GITHUB_OUTPUT_FIELDS
+    )
+
+
+def render_report(report: dict[str, Any], output_format: str) -> str:
+    """Render a report payload in one of the supported formats."""
+    renderer = _RENDERERS.get(output_format)
+    if renderer is None:
+        raise ValueError(f"Unsupported report format: {output_format}")
+    return renderer(report)
+
+
+def load_report(path: Path) -> dict[str, Any]:
+    """Load a report payload from disk."""
+    try:
+        raw = path.read_text(encoding="utf-8")
+    except OSError as error:
+        raise ReportLoadError(f"Unable to read report {path}: {error}") from error
+
+    return parse_report(raw, source=str(path))
+
+
+def parse_report(raw: str, *, source: str) -> dict[str, Any]:
+    """Parse and validate a report payload produced by :func:`build_report`."""
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError as error:
+        raise ReportLoadError(f"Invalid JSON in report {source}: {error.msg}") from error
+
+    if not isinstance(data, dict):
+        raise ReportLoadError(f"Report must be a JSON object: {source}")
+
+    problems = _report_problems(data)
+    if problems:
+        details = "\n".join(f"- {problem}" for problem in problems)
+        raise ReportLoadError(f"Report {source} is not a rag-blast report:\n{details}")
+
+    return data
+
+
+def normalize_format(value: str) -> str | None:
+    """Normalize a report format, or return None when unsupported."""
+    normalized = value.strip().lower()
+    if normalized not in REPORT_FORMATS:
+        return None
+    return normalized
+
+
 def normalize_fail_on(value: str) -> str | None:
     """Normalize a fail-on threshold, or return None when invalid."""
     normalized = value.lower()
@@ -352,23 +430,93 @@ def _unassessed_change_paths(
     )
 
 
+def _report_problems(data: dict[str, Any]) -> list[str]:
+    """Return every reason a payload cannot be rendered, in report field order."""
+    problems: list[str] = []
+
+    for field, expected in REPORT_FIELD_TYPES.items():
+        if field not in data:
+            problems.append(f"{field}: missing")
+        elif not _matches_json_type(data[field], expected):
+            problems.append(f"{field}: expected {_article(expected)} {expected}")
+
+    problems.extend(_entry_problems(data.get("changes"), "changes", REPORT_CHANGE_KEYS))
+    problems.extend(
+        _entry_problems(
+            data.get("findings"),
+            "findings",
+            REPORT_FINDING_KEYS,
+            array_keys=("change_paths",),
+        )
+    )
+    return problems
+
+
+def _entry_problems(
+    entries: Any,
+    field: str,
+    required_keys: tuple[str, ...],
+    *,
+    array_keys: tuple[str, ...] = (),
+) -> list[str]:
+    if not isinstance(entries, list):
+        return []
+
+    problems: list[str] = []
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            problems.append(f"{field}[{index}]: expected an object")
+            continue
+
+        missing = [key for key in required_keys if key not in entry]
+        if missing:
+            problems.append(f"{field}[{index}]: missing {', '.join(missing)}")
+
+        for key in array_keys:
+            if key in entry and not isinstance(entry[key], list):
+                problems.append(f"{field}[{index}].{key}: expected an array")
+
+    return problems
+
+
+def _matches_json_type(value: Any, expected: str) -> bool:
+    if expected == "string":
+        return isinstance(value, str)
+    if expected == "integer":
+        return isinstance(value, int) and not isinstance(value, bool)
+    return isinstance(value, list)
+
+
+def _article(expected: str) -> str:
+    return "an" if expected in {"array", "integer", "object"} else "a"
+
+
+def _github_output_value(value: Any) -> str:
+    text = _raw_text(value)
+    if "\n" in text or "\r" in text:
+        raise ReportLoadError(
+            "Report fields used as GitHub Actions outputs must be single-line values."
+        )
+    return text
+
+
 def _markdown_table_cell(value: Any) -> str:
     return _markdown_text(value).replace("\n", "<br>").replace("|", r"\|")
 
 
 def _markdown_code(value: Any) -> str:
-    text = _markdown_raw_text(value)
+    text = _raw_text(value)
     escaped = html.escape(text, quote=False)
     escaped = escaped.replace("\n", "<br>").replace("|", "&#124;").replace("`", "&#96;")
     return f"<code>{escaped}</code>"
 
 
 def _markdown_text(value: Any) -> str:
-    text = _markdown_raw_text(value)
+    text = _raw_text(value)
     return html.escape(text.replace("`", r"\`"), quote=False)
 
 
-def _markdown_raw_text(value: Any) -> str:
+def _raw_text(value: Any) -> str:
     if isinstance(value, (dict, list, tuple)):
         return json.dumps(value, sort_keys=True)
     if isinstance(value, bool) or value is None:
@@ -460,3 +608,12 @@ def _html_risk_color(risk: Any) -> str:
         "NONE": "var(--ok)",
         "UNASSESSED": "var(--warn)",
     }.get(str(risk), "var(--muted)")
+
+
+_RENDERERS = {
+    "text": render_text_report,
+    "json": render_json_report,
+    "markdown": render_markdown_report,
+    "html": render_html_report,
+    "github-output": render_github_output,
+}

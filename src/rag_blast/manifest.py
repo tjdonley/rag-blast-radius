@@ -9,6 +9,10 @@ from pydantic.types import NonNegativeInt, StringConstraints
 
 NonEmptyString = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
 
+SCHEMA_REFERENCE_KEY = "$schema"
+JSON_SCHEMA_DIALECT = "https://json-schema.org/draft/2020-12/schema"
+NON_WHITESPACE_PATTERN = r"\S"
+
 
 class ManifestLoadError(Exception):
     """Raised when a manifest cannot be loaded as a JSON object."""
@@ -133,11 +137,42 @@ def load_manifest(path: Path) -> dict[str, Any]:
     return validate_manifest(data, path=path)
 
 
+def manifest_json_schema() -> dict[str, Any]:
+    """Return a JSON Schema document describing the RAG manifest."""
+    model_schema = _require_non_whitespace(RagManifest.model_json_schema())
+    properties = dict(model_schema.get("properties", {}))
+    properties[SCHEMA_REFERENCE_KEY] = {
+        "type": "string",
+        "description": (
+            "Optional JSON Schema reference for editor support. rag-blast ignores this "
+            "field when validating and diffing manifests."
+        ),
+    }
+
+    schema: dict[str, Any] = {
+        SCHEMA_REFERENCE_KEY: JSON_SCHEMA_DIALECT,
+        "title": "RAG Manifest",
+        "description": (
+            "Deployed state of a RAG application, as checked by rag-blast. "
+            "JSON Schema cannot express rules that compare two fields, so "
+            "chunking.chunk_overlap < chunking.chunk_size is enforced only by "
+            "'rag-blast validate' and 'rag-blast check'."
+        ),
+    }
+    schema.update(
+        {key: value for key, value in model_schema.items() if key not in {"title", "description"}}
+    )
+    schema["properties"] = properties
+    return schema
+
+
 def validate_manifest(data: Any, *, path: Path | None = None) -> dict[str, Any]:
     """Validate and normalize a manifest dictionary."""
     if not isinstance(data, dict):
         location = f": {path}" if path is not None else ""
         raise ManifestLoadError(f"Manifest must be a JSON object{location}")
+
+    data = _without_schema_reference(data, path=path)
 
     try:
         manifest = RagManifest.model_validate(data)
@@ -145,6 +180,39 @@ def validate_manifest(data: Any, *, path: Path | None = None) -> dict[str, Any]:
         raise ManifestLoadError(_format_validation_errors(error, path=path)) from error
 
     return manifest.model_dump(mode="json")
+
+
+def _require_non_whitespace(node: Any) -> Any:
+    """Mirror NonEmptyString's strip-then-check behaviour in the exported schema.
+
+    Pydantic emits only ``minLength: 1`` for these fields, so an editor would accept
+    a whitespace-only value that ``validate_manifest`` strips and rejects.
+    """
+    if isinstance(node, dict):
+        transformed = {key: _require_non_whitespace(value) for key, value in node.items()}
+        if transformed.get("type") == "string" and transformed.get("minLength") == 1:
+            transformed.setdefault("pattern", NON_WHITESPACE_PATTERN)
+        return transformed
+
+    if isinstance(node, list):
+        return [_require_non_whitespace(item) for item in node]
+
+    return node
+
+
+def _without_schema_reference(data: dict[str, Any], *, path: Path | None) -> dict[str, Any]:
+    """Drop the editor-only ``$schema`` reference so it never reaches validation or diffs."""
+    if SCHEMA_REFERENCE_KEY not in data:
+        return data
+
+    if not isinstance(data[SCHEMA_REFERENCE_KEY], str):
+        location = f" in manifest {path}" if path is not None else ""
+        raise ManifestLoadError(
+            f"Validation failed{location}:\n"
+            f"- {SCHEMA_REFERENCE_KEY}: Input should be a valid string"
+        )
+
+    return {key: value for key, value in data.items() if key != SCHEMA_REFERENCE_KEY}
 
 
 def _format_validation_errors(error: ValidationError, *, path: Path | None = None) -> str:

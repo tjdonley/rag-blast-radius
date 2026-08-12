@@ -16,7 +16,9 @@ inputs:
     required: false
     default: high
   format:
-    description: Report format to print in logs: text or json.
+    description: >
+      Report format printed to logs: text, json, markdown, html, or github-output.
+      The Markdown job summary and step outputs are written regardless of this value.
     required: false
     default: text
   python_version:
@@ -34,7 +36,7 @@ inputs:
 
 outputs:
   risk:
-    description: Top-level report risk: NONE, UNASSESSED, LOW, MEDIUM, or HIGH.
+    description: "Top-level report risk: NONE, UNASSESSED, LOW, MEDIUM, or HIGH."
     value: ${{ steps.run.outputs.risk }}
   change_count:
     description: Number of detected manifest changes.
@@ -73,14 +75,16 @@ runs:
       run: |
         set -uo pipefail
 
+        COMMENT_MARKER='<!-- rag-blast-radius-report -->'
+
         REPORT_FORMAT=$(printf '%s' "$REPORT_FORMAT" | tr '[:upper:]' '[:lower:]')
         FAIL_ON=$(printf '%s' "$FAIL_ON" | tr '[:upper:]' '[:lower:]')
         PR_COMMENT=$(printf '%s' "$PR_COMMENT" | tr '[:upper:]' '[:lower:]')
 
         case "$REPORT_FORMAT" in
-          text|json) ;;
+          text|json|markdown|html|github-output) ;;
           *)
-            echo "::error::Unsupported report format: $REPORT_FORMAT. Use text or json."
+            echo "::error::Unsupported report format: $REPORT_FORMAT. Use text, json, markdown, html, or github-output."
             exit 1
             ;;
         esac
@@ -101,77 +105,60 @@ runs:
             ;;
         esac
 
-        TEXT_REPORT="$RUNNER_TEMP/rag-blast-report.out"
         JSON_REPORT="$RUNNER_TEMP/rag-blast-report.json"
+        OUTPUT_FIELDS="$RUNNER_TEMP/rag-blast-outputs.txt"
 
-        set +e
+        # $RUNNER_TEMP is shared by every step in the job, so a second use of this
+        # action would otherwise re-render the first one's report when its own check
+        # fails before writing.
+        rm -f "$JSON_REPORT" "$OUTPUT_FIELDS"
+
+        # One check run writes the JSON report and applies the fail_on threshold.
+        # Every other view of the report is re-rendered from that file.
         rag-blast check \
           --old "$OLD_MANIFEST" \
           --new "$NEW_MANIFEST" \
-          --format "$REPORT_FORMAT" \
-          --fail-on "$FAIL_ON" | tee "$TEXT_REPORT"
-        status=${PIPESTATUS[0]}
-        set -e
+          --format json \
+          --fail-on "$FAIL_ON" \
+          --output "$JSON_REPORT"
+        status=$?
 
-        if [ "$REPORT_FORMAT" = "json" ]; then
-          cp "$TEXT_REPORT" "$JSON_REPORT"
-        else
-          set +e
-          rag-blast check \
-            --old "$OLD_MANIFEST" \
-            --new "$NEW_MANIFEST" \
-            --format json \
-            --fail-on none > "$JSON_REPORT"
-          json_status=$?
-          set -e
-
-          if [ "$json_status" -ne 0 ]; then
-            if [ "$status" -ne 0 ]; then
-              exit "$status"
-            fi
-            exit "$json_status"
+        if [ ! -s "$JSON_REPORT" ]; then
+          echo "::error::rag-blast did not produce a report."
+          if [ "$status" -eq 0 ]; then
+            exit 1
           fi
+          exit "$status"
         fi
 
-        if ! python - "$JSON_REPORT" >/dev/null 2>&1 <<'PY'
-        import json
-        import sys
-
-        with open(sys.argv[1], encoding="utf-8") as report_file:
-            json.load(report_file)
-        PY
-        then
+        if ! rag-blast report --input "$JSON_REPORT" --format "$REPORT_FORMAT"; then
           if [ "$status" -ne 0 ]; then
             exit "$status"
           fi
-          echo "::error::rag-blast did not produce a valid JSON report."
+          echo "::error::rag-blast could not render the report."
           exit 1
         fi
 
-        python - "$JSON_REPORT" <<'PY' >> "$GITHUB_OUTPUT"
-        import json
-        import sys
+        # Publishing outputs and the job summary is documented behaviour, so a failure
+        # here must not be reported as a successful run.
+        if ! rag-blast report --input "$JSON_REPORT" --format github-output > "$OUTPUT_FIELDS"; then
+          echo "::error::rag-blast could not render the step outputs."
+          exit 1
+        fi
 
-        with open(sys.argv[1], encoding="utf-8") as report_file:
-            report = json.load(report_file)
+        if ! cat "$OUTPUT_FIELDS" >> "$GITHUB_OUTPUT"; then
+          echo "::error::Unable to write step outputs to GITHUB_OUTPUT."
+          exit 1
+        fi
 
-        print(f"risk={report['risk']}")
-        print(f"change_count={report['change_count']}")
-        print(f"finding_count={report['finding_count']}")
-        print(f"unassessed_change_count={report['unassessed_change_count']}")
-        PY
+        RISK=$(sed -n 's/^risk=//p' "$OUTPUT_FIELDS")
+        FINDING_COUNT=$(sed -n 's/^finding_count=//p' "$OUTPUT_FIELDS")
+        UNASSESSED_COUNT=$(sed -n 's/^unassessed_change_count=//p' "$OUTPUT_FIELDS")
 
-        python - "$JSON_REPORT" <<'PY' >> "$GITHUB_STEP_SUMMARY"
-        import json
-        import sys
-
-        from rag_blast.report import render_markdown_report
-
-        with open(sys.argv[1], encoding="utf-8") as report_file:
-            report = json.load(report_file)
-
-        print(render_markdown_report(report))
-        PY
+        if ! rag-blast report --input "$JSON_REPORT" --format markdown >> "$GITHUB_STEP_SUMMARY"; then
+          echo "::error::Unable to write the job summary to GITHUB_STEP_SUMMARY."
+          exit 1
+        fi
 
         if [ "$PR_COMMENT" = "true" ]; then
           if [ -z "${GH_TOKEN:-}" ]; then
@@ -179,17 +166,7 @@ runs:
           elif [ -z "${GITHUB_EVENT_PATH:-}" ] || [ ! -f "$GITHUB_EVENT_PATH" ]; then
             echo "::notice::pr_comment requested but no GitHub event payload was available; skipping PR comment."
           else
-            PR_NUMBER=$(python - "$GITHUB_EVENT_PATH" <<'PY'
-        import json
-        import sys
-
-        with open(sys.argv[1], encoding="utf-8") as event_file:
-            event = json.load(event_file)
-
-        pull_request = event.get("pull_request") or {}
-        print(pull_request.get("number", ""))
-        PY
-        )
+            PR_NUMBER=$(jq -r '.pull_request.number // empty' "$GITHUB_EVENT_PATH")
 
             if [ -z "$PR_NUMBER" ]; then
               echo "::notice::pr_comment requested outside a pull_request event; skipping PR comment."
@@ -198,52 +175,22 @@ runs:
             else
               COMMENT_BODY="$RUNNER_TEMP/rag-blast-pr-comment.md"
               COMMENT_PAYLOAD="$RUNNER_TEMP/rag-blast-pr-comment.json"
-              COMMENTS_JSONL="$RUNNER_TEMP/rag-blast-comments.jsonl"
+              COMMENTS_JSON="$RUNNER_TEMP/rag-blast-comments.json"
 
-              python - "$JSON_REPORT" "$COMMENT_BODY" <<'PY'
-        import json
-        import sys
-
-        from rag_blast.report import render_markdown_report
-
-        with open(sys.argv[1], encoding="utf-8") as report_file:
-            report = json.load(report_file)
-
-        with open(sys.argv[2], "w", encoding="utf-8") as comment_file:
-            comment_file.write("<!-- rag-blast-radius-report -->\n\n")
-            comment_file.write(render_markdown_report(report))
-            comment_file.write("\n")
-        PY
-
-              python - "$COMMENT_BODY" "$COMMENT_PAYLOAD" <<'PY'
-        import json
-        import sys
-
-        with open(sys.argv[1], encoding="utf-8") as body_file:
-            body = body_file.read()
-
-        with open(sys.argv[2], "w", encoding="utf-8") as payload_file:
-            json.dump({"body": body}, payload_file)
-        PY
-
-              if ! gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate --jq '.[] | {id, body} | @json' > "$COMMENTS_JSONL"; then
+              # Unchecked, a failed render would post a comment containing nothing but
+              # the marker. The comment is best-effort, so degrade instead of failing.
+              if ! {
+                   printf '%s\n\n' "$COMMENT_MARKER"
+                   rag-blast report --input "$JSON_REPORT" --format markdown
+                 } > "$COMMENT_BODY"; then
+                echo "::warning::Unable to render the PR comment body; skipping PR comment."
+              elif ! jq -Rs '{body: .}' < "$COMMENT_BODY" > "$COMMENT_PAYLOAD"; then
+                echo "::warning::Unable to build the PR comment payload; skipping PR comment."
+              elif ! gh api "repos/$GITHUB_REPOSITORY/issues/$PR_NUMBER/comments" --paginate > "$COMMENTS_JSON"; then
                 echo "::warning::Unable to fetch existing PR comments; skipping PR comment."
               else
-                COMMENT_ID=$(python - "$COMMENTS_JSONL" <<'PY'
-        import json
-        import sys
-
-        marker = "<!-- rag-blast-radius-report -->"
-        with open(sys.argv[1], encoding="utf-8") as comments_file:
-            for line in comments_file:
-                if not line.strip():
-                    continue
-                comment = json.loads(line)
-                if marker in comment.get("body", ""):
-                    print(comment["id"])
-                    break
-        PY
-        )
+                COMMENT_ID=$(jq -r --arg marker "$COMMENT_MARKER" \
+                  '.[] | select(.body | contains($marker)) | .id' "$COMMENTS_JSON" | head -n 1)
 
                 if [ -n "$COMMENT_ID" ]; then
                   if ! gh api -X PATCH "repos/$GITHUB_REPOSITORY/issues/comments/$COMMENT_ID" --input "$COMMENT_PAYLOAD" >/dev/null; then
@@ -260,20 +207,7 @@ runs:
         fi
 
         if [ "$status" -ne 0 ]; then
-          python - "$JSON_REPORT" "$FAIL_ON" <<'PY'
-        import json
-        import sys
-
-        with open(sys.argv[1], encoding="utf-8") as report_file:
-            report = json.load(report_file)
-
-        print(
-            "::error title=RAG Blast Radius blocked::"
-            f"risk={report['risk']}; fail_on={sys.argv[2]}; "
-            f"findings={report['finding_count']}; "
-            f"unassessed_changes={report['unassessed_change_count']}"
-        )
-        PY
+          echo "::error title=RAG Blast Radius blocked::risk=$RISK; fail_on=$FAIL_ON; findings=$FINDING_COUNT; unassessed_changes=$UNASSESSED_COUNT"
         fi
 
         exit "$status"

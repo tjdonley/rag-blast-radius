@@ -171,6 +171,20 @@ def get_rule(rule_id: str) -> RuleInfo | None:
     return RULES.get(rule_id.upper())
 
 
+def rules_payload() -> list[dict[str, Any]]:
+    """Return the full rule registry, including the change categories that trigger each rule."""
+    return [
+        {
+            "rule_id": RULES[rule_id].id,
+            "severity": RULES[rule_id].severity,
+            "summary": RULES[rule_id].summary,
+            "recommendation": RULES[rule_id].recommendation,
+            "triggered_by": sorted(RULE_TRIGGERS[rule_id]),
+        }
+        for rule_id in RULE_ORDER
+    ]
+
+
 def evaluate_rules(manifest_diff: ManifestDiff) -> tuple[RuleFinding, ...]:
     """Return deterministic rule findings for a manifest diff."""
     findings: list[RuleFinding] = []

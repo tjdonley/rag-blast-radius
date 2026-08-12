@@ -2,9 +2,18 @@ from copy import deepcopy
 
 import pytest
 
-from rag_blast.diff import diff_manifests
+from rag_blast.diff import FIELD_CATEGORIES, diff_manifests
 from rag_blast.manifest import starter_manifest
-from rag_blast.rules import RULES, evaluate_rules, get_rule, highest_severity
+from rag_blast.report import ROLLOUT_STEPS
+from rag_blast.rules import (
+    RULE_ORDER,
+    RULE_TRIGGERS,
+    RULES,
+    evaluate_rules,
+    get_rule,
+    highest_severity,
+    rules_payload,
+)
 
 EXPECTED_RULE_IDS = {
     "REEMBED_REQUIRED",
@@ -220,3 +229,44 @@ def _set_path(manifest: dict[str, object], path: str, value: object) -> None:
         current[name][int(index)] = value  # type: ignore[index]
     else:
         current[leaf] = value  # type: ignore[index]
+
+
+def test_rules_payload_covers_every_rule_in_order() -> None:
+    payload = rules_payload()
+
+    assert [rule["rule_id"] for rule in payload] == list(RULE_ORDER)
+    for rule in payload:
+        assert rule["severity"] in {"LOW", "MEDIUM", "HIGH"}
+        assert rule["summary"]
+        assert rule["recommendation"]
+        assert rule["triggered_by"] == sorted(rule["triggered_by"])
+        assert rule["triggered_by"], f"{rule['rule_id']} lists no triggering categories"
+
+
+def test_rule_registry_and_triggers_stay_in_sync() -> None:
+    assert set(RULES) == set(RULE_TRIGGERS)
+    assert set(RULE_ORDER) == set(RULES)
+    assert len(RULE_ORDER) == len(RULES)
+
+
+def test_every_rule_has_a_rollout_step() -> None:
+    """A triggered rule with no rollout step would silently drop out of the report."""
+    assert set(ROLLOUT_STEPS) == set(RULES)
+
+
+def test_every_trigger_category_is_produced_by_the_diff_engine() -> None:
+    """A rule keyed on a category the differ never emits can never fire."""
+    known_categories = {category for category, _ in FIELD_CATEGORIES.values()} | {
+        "reranker_added",
+        "reranker_removed",
+        "reranker_changed",
+        "eval_dataset_missing",
+        "eval_dataset_changed",
+        "cache_changed",
+        "semantic_cache_namespace_unchanged",
+        "manifest_field_changed",
+    }
+
+    for rule_id, categories in RULE_TRIGGERS.items():
+        unknown = set(categories) - known_categories
+        assert not unknown, f"{rule_id} triggers on categories the differ never emits: {unknown}"
