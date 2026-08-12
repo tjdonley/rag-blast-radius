@@ -56,7 +56,7 @@ Run `rag-blast` before merging a change that modifies RAG configuration, retriev
 
 ## Status
 
-The CLI includes package wiring, starter manifest generation, typed manifest validation, categorized manifest diffing, deterministic risk rules, CI-friendly reports, a GitHub Action wrapper, a narrow LlamaIndex + Qdrant integration, rule explanations, examples, and tests.
+The CLI includes package wiring, starter manifest generation, typed manifest validation, categorized manifest diffing, deterministic risk rules, text, JSON, Markdown, and HTML reports, a JSON Schema export for editors, a GitHub Action wrapper, a narrow LlamaIndex + Qdrant integration, rule listing and explanations, examples, and tests.
 
 ## Install Locally
 
@@ -82,6 +82,12 @@ Create a starter manifest:
 rag-blast init
 ```
 
+Validate a manifest on its own, without comparing it to anything:
+
+```bash
+rag-blast validate .rag-manifest.json
+```
+
 Compare two manifests:
 
 ```bash
@@ -98,6 +104,12 @@ Fail CI on high-risk or unassessed changes:
 
 ```bash
 rag-blast check --old old.json --new new.json --fail-on high
+```
+
+Write a shareable HTML report instead of printing it:
+
+```bash
+rag-blast check --old old.json --new new.json --format html --output report.html
 ```
 
 From a repo checkout, try one of the included examples:
@@ -118,11 +130,66 @@ The integration only inspects known local configuration patterns. It prints `Man
 
 See `docs/llamaindex-qdrant.md` for supported patterns, limitations, and example output.
 
-Explain a rule:
+List every rule, or explain one:
 
 ```bash
+rag-blast rules
 rag-blast explain REEMBED_REQUIRED
 ```
+
+## Commands
+
+| Command | Purpose |
+| --- | --- |
+| `rag-blast init` | Write a starter `.rag-manifest.json`. |
+| `rag-blast validate MANIFEST...` | Validate manifests and report field-level errors. |
+| `rag-blast check --old A --new B` | Diff two manifests and report blast radius. |
+| `rag-blast report --input REPORT.json` | Re-render a saved JSON report in another format. |
+| `rag-blast rules` | List every deterministic rule, its severity, and its triggers. |
+| `rag-blast explain RULE_ID` | Explain one rule and its recommended action. |
+| `rag-blast schema` | Print the manifest JSON Schema. |
+| `rag-blast integrations llamaindex-qdrant` | Draft a partial manifest from Python config. |
+
+### Report Formats
+
+`check` and `report` share one `--format` flag: `text` (default), `json`, `markdown`, `html`, or `github-output`. Both accept `--output PATH` to write to a file instead of stdout; an existing file at that path is overwritten.
+
+| Format | Use it for |
+| --- | --- |
+| `text` | Terminal review. |
+| `json` | CI automation and archiving the full report. |
+| `markdown` | Pull request comments and GitHub job summaries. |
+| `html` | A standalone, self-contained report to share or attach to a release. |
+| `github-output` | `key=value` lines for a GitHub Actions `$GITHUB_OUTPUT` file. |
+
+`report` re-renders a report that `check` already produced, so CI can run the analysis once and publish it several ways:
+
+```bash
+rag-blast check --old old.json --new new.json --format json --output report.json --fail-on high
+rag-blast report --input report.json --format markdown >> "$GITHUB_STEP_SUMMARY"
+rag-blast report --input report.json --format html --output report.html
+```
+
+`check` writes its report before applying `--fail-on`, so a blocking run still leaves the artifact behind. `report` also reads stdin with `--input -`.
+
+### Editor Support
+
+Generate the manifest JSON Schema and point your editor at it:
+
+```bash
+rag-blast schema --output .rag-manifest.schema.json
+```
+
+Then reference it from the manifest:
+
+```json
+{
+  "$schema": "./.rag-manifest.schema.json",
+  "app": "customer-support-rag"
+}
+```
+
+`rag-blast` accepts and ignores a top-level `$schema` key: it is not validated as manifest content and never appears as a manifest change.
 
 ## How It Works
 
@@ -200,7 +267,7 @@ jobs:
           fail_on: high
 ```
 
-The action prints the normal text report, writes a Markdown job summary, emits a blocking annotation when `fail_on` trips, and exposes `risk`, `change_count`, `finding_count`, and `unassessed_change_count` outputs. Set `format: json` when workflow automation needs the raw JSON report in the logs.
+The action prints the report in the requested format, writes a Markdown job summary, emits a blocking annotation when `fail_on` trips, and exposes `risk`, `change_count`, `finding_count`, and `unassessed_change_count` outputs. `format` accepts `text`, `json`, `markdown`, `html`, or `github-output`; set `format: json` when workflow automation needs the raw JSON report in the logs.
 
 For report-only checks, use `fail_on: none`. For pull request comments, add `pr_comment: true`, pass `github_token: ${{ secrets.GITHUB_TOKEN }}`, and grant `pull-requests: write` in workflow permissions. The comment uses a stable marker and updates on reruns instead of duplicating.
 
@@ -249,7 +316,7 @@ See `docs/github-action.md` for blocking, report-only, and PR comment workflows 
 }
 ```
 
-Validation catches missing required sections, empty strings, invalid numeric values, stringified numbers or booleans, chunk overlaps that are not smaller than chunk size, and unknown keys that are likely typos.
+Validation catches missing required sections, empty strings, invalid numeric values, stringified numbers or booleans, chunk overlaps that are not smaller than chunk size, and unknown keys that are likely typos. A top-level `$schema` key is allowed for editor support and ignored everywhere else. Run `rag-blast validate` to check a manifest without diffing it, and `rag-blast schema` to export the JSON Schema.
 
 `retriever.reranker` can be `null` or an object with a required `model` and optional `provider`.
 
@@ -327,11 +394,14 @@ Initial deterministic rules:
 | `SHADOW_INDEX_RECOMMENDED` | MEDIUM | Embedding, chunking, or vector index changes. |
 | `ROLLBACK_REQUIRES_OLD_INDEX` | MEDIUM | Embedding, chunking, or vector index changes. |
 
-Explain a rule locally:
+List rules locally, or explain one:
 
 ```bash
+rag-blast rules
 rag-blast explain REEMBED_REQUIRED
 ```
+
+`rag-blast rules --format json` emits the same registry with the change categories that trigger each rule, so tooling can read the rule set instead of parsing this table.
 
 ## Repository
 

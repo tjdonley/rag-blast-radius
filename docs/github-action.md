@@ -1,6 +1,8 @@
 # GitHub Action
 
-Use `rag-blast-radius` as a pull request gate when RAG manifest changes should be reviewed before deployment. The action installs the local CLI, runs `rag-blast check`, writes a Markdown job summary, and exposes stable outputs for follow-up workflow steps.
+Use `rag-blast-radius` as a pull request gate when RAG manifest changes should be reviewed before deployment. The action installs the local CLI, runs `rag-blast check` once to produce a JSON report, and then re-renders that report with `rag-blast report` for the job log, the Markdown job summary, the step outputs, and the optional pull request comment.
+
+Because every view comes from the same report, the log, summary, comment, and outputs can never disagree with each other.
 
 `old_manifest` and `new_manifest` are paths in the checked-out repository. Pin `uses:` to a release tag or commit SHA for production workflows.
 
@@ -108,7 +110,7 @@ Workflows that run on pull requests from forks may receive a read-only token, de
 | `old_manifest` | yes | | Path to the baseline RAG manifest. |
 | `new_manifest` | yes | | Path to the proposed RAG manifest. |
 | `fail_on` | no | `high` | Fail the workflow when risk is at least `low`, `medium`, or `high`. Use `none` to report only. Unassessed changes fail when any threshold is enabled. |
-| `format` | no | `text` | Report format printed to logs: `text` or `json`. |
+| `format` | no | `text` | Report format printed to logs: `text`, `json`, `markdown`, `html`, or `github-output`. |
 | `python_version` | no | `3.12` | Python version used to install and run `rag-blast`. |
 | `pr_comment` | no | `false` | Post or update a pull request comment with the Markdown report. |
 | `github_token` | no | | GitHub token used when `pr_comment` is `true`. |
@@ -126,7 +128,9 @@ Workflows that run on pull requests from forks may receive a read-only token, de
 
 For valid manifests, the action writes a GitHub job summary with the risk, change count, finding count, unassessed change count, detected changes, findings, unassessed paths, and recommended rollout steps before applying the `fail_on` exit code. If `fail_on` blocks the run, the action also emits a concise GitHub error annotation.
 
-Set `format: json` when a workflow needs to parse the full report from the action logs:
+If a manifest fails to load or validate, the action emits an error annotation and exits without writing a summary.
+
+`format` controls only what is printed to the job log; the Markdown summary and the step outputs are always written. Set `format: json` when a workflow needs to parse the full report from the action logs:
 
 ```yaml
 - name: Check RAG blast radius
@@ -138,3 +142,7 @@ Set `format: json` when a workflow needs to parse the full report from the actio
     fail_on: high
     format: json
 ```
+
+## Requirements
+
+The core check needs only Python and the installed CLI. The optional pull request comment path additionally uses `gh` and `jq`, both preinstalled on GitHub-hosted runners.
