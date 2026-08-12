@@ -62,6 +62,7 @@ FIELD_CATEGORIES: dict[str, tuple[str, str]] = {
     "chunking.chunk_overlap": ("chunk_overlap_changed", "Chunk overlap changed"),
     "vector_store.provider": ("vector_store_provider_changed", "Vector store provider changed"),
     "vector_store.collection": ("vector_collection_changed", "Vector collection changed"),
+    "vector_store.alias": ("vector_store_alias_changed", "Vector store alias changed"),
     "retriever.top_k": ("retriever_top_k_changed", "Retriever top_k changed"),
     "retriever.hybrid": ("hybrid_retrieval_changed", "Hybrid retrieval setting changed"),
 }
@@ -74,6 +75,9 @@ CACHE_SENSITIVE_CATEGORIES = frozenset(
         "chunking_strategy_changed",
         "chunk_size_changed",
         "chunk_overlap_changed",
+        "vector_store_provider_changed",
+        "vector_collection_changed",
+        "vector_store_alias_changed",
         "retriever_top_k_changed",
         "hybrid_retrieval_changed",
         "reranker_added",

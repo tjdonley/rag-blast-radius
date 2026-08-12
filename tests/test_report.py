@@ -1,8 +1,10 @@
 import json
+from copy import deepcopy
 
 import pytest
 
-from rag_blast.diff import ManifestChange, ManifestDiff
+from rag_blast.diff import ManifestChange, ManifestDiff, diff_manifests
+from rag_blast.manifest import starter_manifest
 from rag_blast.report import (
     REPORT_FORMATS,
     ReportLoadError,
@@ -129,6 +131,19 @@ def test_build_report_tracks_mixed_assessed_and_unassessed_changes() -> None:
     assert report["unassessed_change_count"] == 1
     assert report["unassessed_change_paths"] == ["app"]
     assert "Review unassessed manifest changes before deployment." in report["recommended_rollout"]
+
+
+def test_vector_store_change_with_unchanged_semantic_cache_is_high_risk() -> None:
+    old = starter_manifest()
+    new = deepcopy(old)
+    new["vector_store"]["collection"] = "support_docs_v4"
+
+    report = build_report(diff_manifests(old, new))
+
+    assert report["risk"] == "HIGH"
+    assert "SEMANTIC_CACHE_UNSAFE" in [finding["rule_id"] for finding in report["findings"]]
+    assert report["unassessed_change_count"] == 0
+    assert should_fail_report(report, "high") is True
 
 
 def test_render_json_report_is_parseable() -> None:

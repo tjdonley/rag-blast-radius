@@ -58,6 +58,7 @@ def test_diff_manifests_distinguishes_missing_from_literal_value() -> None:
         ("chunking.chunk_overlap", 150, "chunk_overlap_changed"),
         ("vector_store.provider", "weaviate", "vector_store_provider_changed"),
         ("vector_store.collection", "SupportDocs_v4", "vector_collection_changed"),
+        ("vector_store.alias", "SupportDocs", "vector_store_alias_changed"),
         ("retriever.top_k", 12, "retriever_top_k_changed"),
         ("retriever.hybrid", True, "hybrid_retrieval_changed"),
     ],
@@ -258,6 +259,28 @@ def test_diff_manifests_detects_semantic_cache_namespace_unchanged_after_chunkin
     old = starter_manifest()
     new = deepcopy(old)
     new["chunking"]["chunk_size"] = 1200
+
+    manifest_diff = diff_manifests(old, new)
+
+    assert ("caches[support_rag_prod_v4].namespace", "semantic_cache_namespace_unchanged") in [
+        (change.path, change.category) for change in manifest_diff.changes
+    ]
+
+
+@pytest.mark.parametrize(
+    ("path", "new_value"),
+    [
+        ("vector_store.provider", "weaviate"),
+        ("vector_store.collection", "support_docs_v4"),
+        ("vector_store.alias", "SupportDocs"),
+    ],
+)
+def test_diff_manifests_detects_semantic_cache_namespace_unchanged_after_vector_store_change(
+    path: str, new_value: object
+) -> None:
+    old = starter_manifest()
+    new = deepcopy(old)
+    _set_path(new, path, new_value)
 
     manifest_diff = diff_manifests(old, new)
 

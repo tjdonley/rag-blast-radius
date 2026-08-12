@@ -48,7 +48,7 @@ Run `rag-blast` before merging a change that modifies RAG configuration, retriev
 | --- | --- |
 | Embeddings | Provider, model, or vector dimensions changed. |
 | Chunking | Strategy, chunk size, or overlap changed. |
-| Vector store | Provider or collection changed; alias changes are reported for manual review. |
+| Vector store | Provider, collection, or alias changed; each receives deterministic shadow-index and rollback guidance. |
 | Retriever | `top_k`, hybrid retrieval, or reranker changed. |
 | Semantic caches | Cache namespace stayed the same after retrieval-sensitive changes. |
 | Evals | Retrieval eval datasets changed or were removed. |
